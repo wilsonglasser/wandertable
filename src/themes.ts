@@ -1,0 +1,55 @@
+import type { ThemeConfig } from './types/index.js';
+
+export const THEME_LIGHT: ThemeConfig = {
+  bgColor: '#ffffff',
+  cellBgColor: '#ffffff',
+  cellTextColor: '#1e293b',
+  headerBgColor: '#f8fafc',
+  headerTextColor: '#475569',
+  gridLineColor: '#e2e8f0',
+  selectionBgColor: 'rgba(59, 130, 246, 0.08)',
+  selectionBorderColor: '#3b82f6',
+  focusBorderColor: '#3b82f6',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  fontSize: 13,
+  headerFontSize: 12,
+  cellPadding: 8,
+  headerHeight: 28,
+  rowHeaderWidth: 50,
+};
+
+export const THEME_DARK: ThemeConfig = {
+  bgColor: '#0f172a',
+  cellBgColor: '#1e293b',
+  cellTextColor: '#e2e8f0',
+  headerBgColor: '#0f172a',
+  headerTextColor: '#94a3b8',
+  gridLineColor: '#334155',
+  selectionBgColor: 'rgba(59, 130, 246, 0.15)',
+  selectionBorderColor: '#3b82f6',
+  focusBorderColor: '#60a5fa',
+  fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  fontSize: 13,
+  headerFontSize: 12,
+  cellPadding: 8,
+  headerHeight: 28,
+  rowHeaderWidth: 50,
+};
+
+export const THEME_MINIMAL: ThemeConfig = {
+  bgColor: '#ffffff',
+  cellBgColor: '#ffffff',
+  cellTextColor: '#111827',
+  headerBgColor: '#ffffff',
+  headerTextColor: '#9ca3af',
+  gridLineColor: '#f3f4f6',
+  selectionBgColor: 'rgba(99, 102, 241, 0.06)',
+  selectionBorderColor: '#6366f1',
+  focusBorderColor: '#6366f1',
+  fontFamily: '"Inter", -apple-system, BlinkMacSystemFont, sans-serif',
+  fontSize: 13,
+  headerFontSize: 11,
+  cellPadding: 10,
+  headerHeight: 32,
+  rowHeaderWidth: 44,
+};

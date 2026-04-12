@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WanderTable - Documentation</title>
+  <style>
+    :root {
+      --c-bg: #ffffff;
+      --c-bg-soft: #f8fafc;
+      --c-bg-code: #f1f5f9;
+      --c-text: #1e293b;
+      --c-text-soft: #64748b;
+      --c-border: #e2e8f0;
+      --c-brand: #3b82f6;
+      --c-brand-light: #dbeafe;
+      --c-sidebar: 260px;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color: var(--c-text);
+      background: var(--c-bg);
+      line-height: 1.7;
+    }
+
+    /* ── Layout ── */
+    .layout { display: flex; min-height: 100vh; }
+    .sidebar {
+      width: var(--c-sidebar);
+      border-right: 1px solid var(--c-border);
+      padding: 24px 0;
+      position: fixed;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      overflow-y: auto;
+      background: var(--c-bg-soft);
+    }
+    .main {
+      margin-left: var(--c-sidebar);
+      flex: 1;
+      max-width: 840px;
+      padding: 32px 48px 80px;
+    }
+
+    /* ── Sidebar ── */
+    .sidebar-logo {
+      padding: 0 20px 16px;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--c-brand);
+      border-bottom: 1px solid var(--c-border);
+      margin-bottom: 12px;
+    }
+    .sidebar-logo small { font-weight: 400; color: var(--c-text-soft); font-size: 12px; display: block; }
+    .nav-group { margin-bottom: 8px; }
+    .nav-group-title {
+      padding: 6px 20px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--c-text-soft);
+    }
+    .nav-link {
+      display: block;
+      padding: 4px 20px 4px 28px;
+      font-size: 13px;
+      color: var(--c-text);
+      text-decoration: none;
+      border-left: 2px solid transparent;
+    }
+    .nav-link:hover { color: var(--c-brand); background: var(--c-brand-light); }
+    .nav-link.active { color: var(--c-brand); border-left-color: var(--c-brand); font-weight: 500; }
+
+    /* ── Content ── */
+    h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+    h2 { font-size: 20px; font-weight: 600; margin-top: 40px; margin-bottom: 12px; padding-bottom: 6px; border-bottom: 1px solid var(--c-border); }
+    h3 { font-size: 16px; font-weight: 600; margin-top: 28px; margin-bottom: 8px; }
+    p { margin-bottom: 12px; }
+    a { color: var(--c-brand); }
+    code {
+      font-family: "SF Mono", "Fira Code", monospace;
+      font-size: 13px;
+      background: var(--c-bg-code);
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+    pre {
+      background: #0f172a;
+      color: #e2e8f0;
+      padding: 16px 20px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin-bottom: 16px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    pre code { background: none; padding: 0; color: inherit; }
+    .keyword { color: #c084fc; }
+    .string { color: #34d399; }
+    .comment { color: #64748b; }
+    .fn { color: #60a5fa; }
+    .num { color: #fbbf24; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; font-size: 13px; }
+    th { text-align: left; padding: 8px 12px; background: var(--c-bg-soft); border: 1px solid var(--c-border); font-weight: 600; }
+    td { padding: 8px 12px; border: 1px solid var(--c-border); }
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    .badge-green { background: #dcfce7; color: #166534; }
+    .badge-blue { background: #dbeafe; color: #1e40af; }
+    .tip {
+      padding: 12px 16px;
+      background: #eff6ff;
+      border-left: 3px solid var(--c-brand);
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 16px;
+      font-size: 13px;
+    }
+    .tip strong { color: var(--c-brand); }
+    ul, ol { margin-bottom: 12px; padding-left: 24px; }
+    li { margin-bottom: 4px; }
+
+    /* ── Demo ── */
+    #demo-grid {
+      width: 100%;
+      height: 300px;
+      border-radius: 8px;
+      overflow: hidden;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+      margin-bottom: 16px;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 768px) {
+      .sidebar { display: none; }
+      .main { margin-left: 0; padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <!-- Sidebar -->
+    <nav class="sidebar">
+      <div class="sidebar-logo">
+        WanderTable
+        <small>v0.1.0</small>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Getting Started</div>
+        <a class="nav-link active" href="#intro">Introduction</a>
+        <a class="nav-link" href="#install">Installation</a>
+        <a class="nav-link" href="#quick-start">Quick Start</a>
+        <a class="nav-link" href="#demo">Live Demo</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Modes</div>
+        <a class="nav-link" href="#mode-spreadsheet">Spreadsheet Mode</a>
+        <a class="nav-link" href="#mode-table">Table Mode</a>
+        <a class="nav-link" href="#layout">Layout (scroll / auto)</a>
+        <a class="nav-link" href="#infinite">Infinite Mode</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">Features</div>
+        <a class="nav-link" href="#renderers">Renderers</a>
+        <a class="nav-link" href="#editors">Editors</a>
+        <a class="nav-link" href="#selection">Selection</a>
+        <a class="nav-link" href="#clipboard">Clipboard</a>
+        <a class="nav-link" href="#undo-redo">Undo / Redo</a>
+        <a class="nav-link" href="#sort-filter">Sort & Filter</a>
+        <a class="nav-link" href="#merge">Merge Cells</a>
+        <a class="nav-link" href="#frozen">Frozen Panes</a>
+        <a class="nav-link" href="#grouped-headers">Grouped Headers</a>
+        <a class="nav-link" href="#pagination">Pagination</a>
+        <a class="nav-link" href="#row-groups">Row Grouping</a>
+        <a class="nav-link" href="#fill-handle">Fill Handle</a>
+        <a class="nav-link" href="#col-reorder">Column Reorder</a>
+        <a class="nav-link" href="#context-menu">Context Menu</a>
+        <a class="nav-link" href="#export">Export</a>
+        <a class="nav-link" href="#loading">Loading State</a>
+        <a class="nav-link" href="#lazy-loading">Lazy Loading</a>
+      </div>
+      <div class="nav-group">
+        <div class="nav-group-title">API Reference</div>
+        <a class="nav-link" href="#options">Options</a>
+        <a class="nav-link" href="#api-data">Data Methods</a>
+        <a class="nav-link" href="#api-events">Events</a>
+        <a class="nav-link" href="#themes">Themes</a>
+      </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main">
+
+      <section id="intro">
+        <h1>WanderTable</h1>
+        <p>High-performance grid/spreadsheet library for the web. Zero dependencies, TypeScript, DOM-virtualized.</p>
+
+        <div style="display:flex;gap:8px;margin-bottom:20px">
+          <span class="badge badge-green">47 tests passing</span>
+          <span class="badge badge-blue">~110 KB ESM</span>
+          <span class="badge badge-blue">~9 KB CSS</span>
+        </div>
+
+        <table>
+          <tr><td><strong>Rendering</strong></td><td>DOM virtualized + CSS <code>contain</code>. Only visible cells exist (~750 nodes max).</td></tr>
+          <tr><td><strong>Cell content</strong></td><td>Real HTML. Any element, CSS, hover, transitions.</td></tr>
+          <tr><td><strong>Data model</strong></td><td>Sparse Map. Only cells with data consume memory.</td></tr>
+          <tr><td><strong>Formats</strong></td><td>ESM, CJS, UMD, IIFE (standalone), TypeScript declarations</td></tr>
+        </table>
+      </section>
+
+      <section id="install">
+        <h2>Installation</h2>
+        <h3>npm / yarn / pnpm</h3>
+<pre><code>npm install wandertable</code></pre>
+
+        <h3>CDN (standalone)</h3>
+<pre><code><span class="comment">&lt;!-- CSS --&gt;</span>
+&lt;link rel="stylesheet" href="https://unpkg.com/wandertable/dist/style.css"&gt;
+
+<span class="comment">&lt;!-- JS (exposes window.WanderTable) --&gt;</span>
+&lt;script src="https://unpkg.com/wandertable/dist/wandertable.global.js"&gt;&lt;/script&gt;</code></pre>
+      </section>
+
+      <section id="quick-start">
+        <h2>Quick Start</h2>
+<pre><code><span class="keyword">import</span> { WanderTable } <span class="keyword">from</span> <span class="string">'wandertable'</span>;
+
+<span class="keyword">const</span> table = <span class="keyword">new</span> <span class="fn">WanderTable</span>(document.<span class="fn">getElementById</span>(<span class="string">'grid'</span>), {
+  rowCount: <span class="num">1000</span>,
+  colCount: <span class="num">26</span>,
+  data: [
+    { row: <span class="num">0</span>, col: <span class="num">0</span>, data: { value: <span class="string">'Hello'</span> } },
+    { row: <span class="num">0</span>, col: <span class="num">1</span>, data: { value: <span class="num">42</span>, type: <span class="string">'number'</span> } },
+    { row: <span class="num">1</span>, col: <span class="num">0</span>, data: { value: <span class="keyword">true</span>, type: <span class="string">'checkbox'</span> } },
+    { row: <span class="num">1</span>, col: <span class="num">1</span>, data: { value: <span class="string">'active'</span>, type: <span class="string">'badge'</span> } },
+  ],
+});</code></pre>
+      </section>
+
+      <section id="demo">
+        <h2>Live Demo</h2>
+        <div id="demo-grid"></div>
+        <p style="color:var(--c-text-soft);font-size:13px">Click cells, arrow keys, type to edit, Ctrl+C/V, drag to select, right-click for menu.</p>
+      </section>
+
+      <section id="mode-spreadsheet">
+        <h2>Spreadsheet Mode</h2>
+        <p>Each cell is independent. Data is scattered freely. Like Excel.</p>
+<pre><code><span class="keyword">new</span> <span class="fn">WanderTable</span>(el, {
+  mode: <span class="string">'spreadsheet'</span>,
+  rowCount: <span class="num">1000</span>,
+  colCount: <span class="num">26</span>,
+});
+
+<span class="comment">// Each cell has its own type</span>
+table.<span class="fn">setCell</span>(<span class="num">0</span>, <span class="num">0</span>, { value: <span class="string">'text'</span>, type: <span class="string">'text'</span> });
+table.<span class="fn">setCell</span>(<span class="num">1</span>, <span class="num">0</span>, { value: <span class="num">75</span>, type: <span class="string">'progress'</span> });
+table.<span class="fn">setCell</span>(<span class="num">2</span>, <span class="num">0</span>, { value: <span class="keyword">true</span>, type: <span class="string">'checkbox'</span> });</code></pre>
+      </section>
+
+      <section id="mode-table">
+        <h2>Table Mode</h2>
+        <p>Column-driven. Rows replicate the column structure. Like a data table.</p>
+<pre><code><span class="keyword">new</span> <span class="fn">WanderTable</span>(el, {
+  mode: <span class="string">'table'</span>,
+  columns: [
+    { key: <span class="string">'name'</span>, label: <span class="string">'Name'</span>, width: <span class="num">180</span> },
+    { key: <span class="string">'status'</span>, label: <span class="string">'Status'</span>, type: <span class="string">'badge'</span> },
+  ],
+  tableData: [
+    { name: <span class="string">'Alice'</span>, status: <span class="string">'active'</span> },
+    { name: <span class="string">'Bob'</span>, status: <span class="string">'pending'</span> },
+  ],
+});</code></pre>
+      </section>
+
+      <section id="layout">
+        <h2>Layout Modes</h2>
+        <table>
+          <tr><th>Mode</th><th>Behavior</th></tr>
+          <tr><td><code>scroll</code> (default)</td><td>Fixed height, internal scroll, virtualized. Best for large datasets.</td></tr>
+          <tr><td><code>auto</code></td><td>Grid grows with content. Scroll on the page. No virtualization.</td></tr>
+        </table>
+<pre><code><span class="keyword">new</span> <span class="fn">WanderTable</span>(el, { layout: <span class="string">'auto'</span>, autoRowHeight: <span class="keyword">true</span> });</code></pre>
+      </section>
+
+      <section id="infinite">
+        <h2>Infinite Mode</h2>
+        <p>Grid auto-expands when navigating or scrolling beyond current bounds.</p>
+<pre><code><span class="keyword">new</span> <span class="fn">WanderTable</span>(el, { infinite: <span class="keyword">true</span>, rowCount: <span class="num">50</span>, colCount: <span class="num">26</span> });</code></pre>
+      </section>
+
+      <section id="renderers">
+        <h2>Renderers</h2>
+        <table>
+          <tr><th>Type</th><th>Description</th></tr>
+          <tr><td><code>text</code></td><td>Plain text (default)</td></tr>
+          <tr><td><code>number</code></td><td>Formatted number (Intl.NumberFormat)</td></tr>
+          <tr><td><code>checkbox</code></td><td>Checkbox, toggles on click</td></tr>
+          <tr><td><code>badge</code></td><td>Colored tag (auto-color by value)</td></tr>
+          <tr><td><code>progress</code></td><td>Progress bar</td></tr>
+          <tr><td><code>blank</code></td><td>Empty, not editable</td></tr>
+        </table>
+
+        <h3>Custom Renderer</h3>
+<pre><code>table.<span class="fn">registerRenderer</span>(<span class="string">'user-card'</span>, {
+  <span class="fn">render</span>(cell, data, state) {
+    <span class="keyword">const</span> user = data?.value;
+    cell.innerHTML = <span class="string">`&lt;div class="card"&gt;
+      &lt;img src="${user.avatar}" /&gt;
+      &lt;span&gt;${user.name}&lt;/span&gt;
+    &lt;/div&gt;`</span>;
+  }
+});</code></pre>
+      </section>
+
+      <section id="editors">
+        <h2>Editors</h2>
+        <p>Built-in: <code>text</code>, <code>dropdown</code> (async, searchable, multi-select), <code>blank</code>.</p>
+<pre><code>table.<span class="fn">registerEditor</span>(<span class="string">'date-picker'</span>, () => ({
+  <span class="fn">createElement</span>(container) { <span class="comment">/* create DOM */</span> },
+  <span class="fn">open</span>(value, bounds, cellData) { <span class="comment">/* show editor */</span> },
+  <span class="fn">getValue</span>() { <span class="comment">/* return edited value */</span> },
+  <span class="fn">close</span>() { <span class="comment">/* cleanup */</span> },
+}));</code></pre>
+      </section>
+
+      <section id="selection">
+        <h2>Selection</h2>
+        <ul>
+          <li>Click = single cell</li>
+          <li>Shift+Click = range</li>
+          <li>Ctrl+Click = multi-range</li>
+          <li>Drag = area select</li>
+          <li>Header click = full row/column</li>
+          <li>Corner = select all</li>
+        </ul>
+<pre><code>table.<span class="fn">getSelectionInfo</span>();
+<span class="comment">// { focus, bounds, cellCount, isFullRow, isFullCol, isMultiCell, ... }</span></code></pre>
+      </section>
+
+      <section id="clipboard">
+        <h2>Clipboard</h2>
+        <p>Ctrl+C/V/X. TSV format compatible with Excel/Sheets. Single-cell paste fills the entire selection.</p>
+      </section>
+
+      <section id="undo-redo">
+        <h2>Undo / Redo</h2>
+<pre><code>table.<span class="fn">undo</span>();
+table.<span class="fn">redo</span>();
+
+<span class="comment">// Sync with external database</span>
+table.<span class="fn">on</span>(<span class="string">'command:execute'</span>, (e) => db.<span class="fn">save</span>(e.changes));
+table.<span class="fn">on</span>(<span class="string">'command:undo'</span>, (e) => db.<span class="fn">save</span>(e.changes));
+table.<span class="fn">on</span>(<span class="string">'command:redo'</span>, (e) => db.<span class="fn">save</span>(e.changes));</code></pre>
+      </section>
+
+      <section id="sort-filter">
+        <h2>Sort & Filter</h2>
+<pre><code>table.<span class="fn">sort</span>(<span class="num">1</span>, <span class="string">'asc'</span>);
+table.<span class="fn">setFilter</span>(<span class="num">2</span>, (row, data) => data.<span class="fn">getCell</span>(row, <span class="num">2</span>)?.value === <span class="string">'active'</span>);
+
+<span class="comment">// Server-side: use callbacks</span>
+<span class="keyword">new</span> <span class="fn">WanderTable</span>(el, {
+  <span class="fn">onSort</span>: (col, dir, key) => { fetchSorted(key, dir); <span class="keyword">return true</span>; },
+  <span class="fn">onFilter</span>: (col, key, active) => { fetchFiltered(key); <span class="keyword">return true</span>; },
+});</code></pre>
+      </section>
+
+      <section id="merge">
+        <h2>Merge Cells</h2>
+<pre><code>table.<span class="fn">mergeCells</span>(<span class="num">0</span>, <span class="num">0</span>, <span class="num">2</span>, <span class="num">3</span>); <span class="comment">// row, col, rowSpan, colSpan</span>
+table.<span class="fn">unmergeCells</span>(<span class="num">0</span>, <span class="num">0</span>);</code></pre>
+      </section>
+
+      <section id="frozen">
+        <h2>Frozen Panes</h2>
+<pre><code><span class="keyword">new</span> <span class="fn">WanderTable</span>(el, { frozenRows: <span class="num">1</span>, frozenCols: <span class="num">2</span> });</code></pre>
+      </section>
+
+      <section id="grouped-headers">
+        <h2>Grouped Headers</h2>
+<pre><code>columns: [
+  { key: <span class="string">'name'</span>, label: <span class="string">'Name'</span> },
+  { label: <span class="string">'Q4'</span>, children: [
+    { key: <span class="string">'oct'</span>, label: <span class="string">'Oct'</span> },
+    { key: <span class="string">'nov'</span>, label: <span class="string">'Nov'</span> },
+    { key: <span class="string">'dec'</span>, label: <span class="string">'Dec'</span> },
+  ]},
+]</code></pre>
+      </section>
+
+      <section id="pagination">
+        <h2>Pagination</h2>
+<pre><code><span class="keyword">new</span> <span class="fn">WanderTable</span>(el, {
+  pagination: { enabled: <span class="keyword">true</span>, pageSize: <span class="num">50</span> },
+  <span class="fn">onPageChange</span>: (page, size) => <span class="fn">fetchPage</span>(page, size),
+});</code></pre>
+      </section>
+
+      <section id="row-groups">
+        <h2>Row Grouping</h2>
+<pre><code>table.<span class="fn">addRowGroup</span>(<span class="num">0</span>, <span class="num">5</span>, <span class="string">'Group A'</span>);
+table.<span class="fn">toggleRowGroup</span>(<span class="num">0</span>);
+table.<span class="fn">collapseAllGroups</span>();</code></pre>
+      </section>
+
+      <section id="fill-handle">
+        <h2>Fill Handle</h2>
+        <p>Drag the square at bottom-right of selection. Supports all directions including diagonal.</p>
+<pre><code><span class="keyword">new</span> <span class="fn">WanderTable</span>(el, {
+  allowFillHandle: <span class="keyword">true</span>,
+  <span class="fn">onFill</span>: (source, fill, direction) => {
+    <span class="comment">// Return CellPatch[] for custom fill</span>
+    <span class="comment">// Return true to cancel</span>
+    <span class="comment">// Return void for default (repeat pattern)</span>
+  },
+});</code></pre>
+      </section>
+
+      <section id="col-reorder">
+        <h2>Column Reorder</h2>
+<pre><code><span class="keyword">new</span> <span class="fn">WanderTable</span>(el, { allowColReorder: <span class="keyword">true</span> });</code></pre>
+      </section>
+
+      <section id="context-menu">
+        <h2>Context Menu</h2>
+<pre><code>table.contextMenuItems = [
+  {
+    label: <span class="string">'Custom Action'</span>,
+    visible: (ctx) => ctx.target === <span class="string">'cell'</span>,
+    disabled: (ctx) => ctx.readOnly,
+    <span class="fn">action</span>: (ctx) => <span class="fn">doSomething</span>(ctx.row, ctx.col),
+  },
+];
+<span class="comment">// ctx: { target, row, col, selectedCount, isMultiSelect, isFullRow, isFullCol, readOnly, canUndo, canRedo }</span></code></pre>
+      </section>
+
+      <section id="export">
+        <h2>Export</h2>
+<pre><code>table.<span class="fn">downloadCSV</span>(<span class="string">'data.csv'</span>);
+table.<span class="fn">downloadJSON</span>(<span class="string">'data.json'</span>);
+
+<span class="comment">// With options</span>
+table.<span class="fn">exportCSV</span>({ columns: [<span class="num">0</span>,<span class="num">1</span>,<span class="num">2</span>], headers: [<span class="string">'Name'</span>,<span class="string">'Age'</span>,<span class="string">'City'</span>] });</code></pre>
+      </section>
+
+      <section id="loading">
+        <h2>Loading State</h2>
+<pre><code>table.<span class="fn">setLoading</span>(<span class="keyword">true</span>);  <span class="comment">// show spinner overlay</span>
+table.<span class="fn">setLoading</span>(<span class="keyword">false</span>); <span class="comment">// hide</span></code></pre>
+      </section>
+
+      <section id="lazy-loading">
+        <h2>Lazy Loading</h2>
+<pre><code><span class="keyword">new</span> <span class="fn">WanderTable</span>(el, {
+  <span class="fn">onLoadMore</span>: (direction) => {
+    table.<span class="fn">setLoading</span>(<span class="keyword">true</span>);
+    <span class="fn">fetchMore</span>().<span class="fn">then</span>(rows => {
+      table.<span class="fn">applyPatch</span>(rows);
+      table.<span class="fn">setLoading</span>(<span class="keyword">false</span>);
+    });
+  },
+});</code></pre>
+      </section>
+
+      <section id="options">
+        <h2>All Options</h2>
+        <table>
+          <tr><th>Option</th><th>Type</th><th>Default</th></tr>
+          <tr><td><code>mode</code></td><td><code>'spreadsheet' | 'table'</code></td><td><code>'spreadsheet'</code></td></tr>
+          <tr><td><code>layout</code></td><td><code>'scroll' | 'auto'</code></td><td><code>'scroll'</code></td></tr>
+          <tr><td><code>infinite</code></td><td><code>boolean</code></td><td><code>false</code></td></tr>
+          <tr><td><code>rowCount</code></td><td><code>number</code></td><td><code>100</code></td></tr>
+          <tr><td><code>colCount</code></td><td><code>number</code></td><td><code>26</code></td></tr>
+          <tr><td><code>defaultRowHeight</code></td><td><code>number</code></td><td><code>28</code></td></tr>
+          <tr><td><code>defaultColWidth</code></td><td><code>number</code></td><td><code>100</code></td></tr>
+          <tr><td><code>autoRowHeight</code></td><td><code>boolean</code></td><td><code>false</code></td></tr>
+          <tr><td><code>readOnly</code></td><td><code>boolean</code></td><td><code>false</code></td></tr>
+          <tr><td><code>showRowHeaders</code></td><td><code>boolean</code></td><td><code>true</code></td></tr>
+          <tr><td><code>showColHeaders</code></td><td><code>boolean</code></td><td><code>true</code></td></tr>
+          <tr><td><code>showGridLines</code></td><td><code>boolean</code></td><td><code>true</code></td></tr>
+          <tr><td><code>showBorder</code></td><td><code>boolean</code></td><td><code>true</code></td></tr>
+          <tr><td><code>frozenRows</code></td><td><code>number</code></td><td><code>0</code></td></tr>
+          <tr><td><code>frozenCols</code></td><td><code>number</code></td><td><code>0</code></td></tr>
+          <tr><td><code>defaultCellType</code></td><td><code>string</code></td><td><code>'text'</code></td></tr>
+          <tr><td><code>allowEditing</code></td><td><code>boolean</code></td><td><code>true</code></td></tr>
+          <tr><td><code>allowSelection</code></td><td><code>boolean</code></td><td><code>true</code></td></tr>
+          <tr><td><code>allowRangeSelection</code></td><td><code>boolean</code></td><td><code>true</code></td></tr>
+          <tr><td><code>allowColResize</code></td><td><code>boolean</code></td><td><code>true</code></td></tr>
+          <tr><td><code>allowRowResize</code></td><td><code>boolean</code></td><td><code>true</code></td></tr>
+          <tr><td><code>allowClipboard</code></td><td><code>boolean</code></td><td><code>true</code></td></tr>
+          <tr><td><code>allowContextMenu</code></td><td><code>boolean</code></td><td><code>true</code></td></tr>
+          <tr><td><code>allowKeyboardNav</code></td><td><code>boolean</code></td><td><code>true</code></td></tr>
+          <tr><td><code>allowUndoRedo</code></td><td><code>boolean</code></td><td><code>true</code></td></tr>
+          <tr><td><code>allowFillHandle</code></td><td><code>boolean</code></td><td><code>true</code></td></tr>
+          <tr><td><code>allowColReorder</code></td><td><code>boolean</code></td><td><code>false</code></td></tr>
+          <tr><td><code>undoLimit</code></td><td><code>number</code></td><td><code>100</code></td></tr>
+        </table>
+      </section>
+
+      <section id="api-data">
+        <h2>Data Methods</h2>
+        <table>
+          <tr><th>Method</th><th>Description</th></tr>
+          <tr><td><code>setCell(row, col, data)</code></td><td>Set full cell data</td></tr>
+          <tr><td><code>getCell(row, col)</code></td><td>Get cell data</td></tr>
+          <tr><td><code>setCellValue(row, col, value)</code></td><td>Set value with undo</td></tr>
+          <tr><td><code>deleteCell(row, col)</code></td><td>Remove cell</td></tr>
+          <tr><td><code>applyPatch(patches)</code></td><td>Bulk update with undo</td></tr>
+          <tr><td><code>transaction(fn)</code></td><td>Batch, single re-render</td></tr>
+          <tr><td><code>setTableData(rows)</code></td><td>Replace all (table mode)</td></tr>
+          <tr><td><code>sort(col, dir)</code></td><td>Sort column</td></tr>
+          <tr><td><code>setFilter(col, fn)</code></td><td>Filter rows</td></tr>
+          <tr><td><code>mergeCells(r,c,rs,cs)</code></td><td>Merge range</td></tr>
+          <tr><td><code>exportCSV(opts?)</code></td><td>Export as CSV string</td></tr>
+          <tr><td><code>downloadCSV(name)</code></td><td>Download CSV file</td></tr>
+          <tr><td><code>undo() / redo()</code></td><td>Undo/redo last action</td></tr>
+          <tr><td><code>refresh()</code></td><td>Force re-render</td></tr>
+          <tr><td><code>destroy()</code></td><td>Cleanup</td></tr>
+        </table>
+      </section>
+
+      <section id="api-events">
+        <h2>Events</h2>
+        <table>
+          <tr><th>Event</th><th>Payload</th></tr>
+          <tr><td><code>cell:change</code></td><td><code>{ row, col, oldValue, newValue }</code></td></tr>
+          <tr><td><code>cell:click</code></td><td><code>{ row, col, event }</code></td></tr>
+          <tr><td><code>selection:change</code></td><td><code>{ ranges }</code></td></tr>
+          <tr><td><code>command:execute</code></td><td><code>{ changes }</code></td></tr>
+          <tr><td><code>command:undo</code></td><td><code>{ changes }</code></td></tr>
+          <tr><td><code>command:redo</code></td><td><code>{ changes }</code></td></tr>
+          <tr><td><code>editor:open</code></td><td><code>{ row, col }</code></td></tr>
+          <tr><td><code>editor:close</code></td><td><code>{ row, col, value, cancelled }</code></td></tr>
+          <tr><td><code>scroll</code></td><td><code>{ viewport }</code></td></tr>
+          <tr><td><code>column:resize</code></td><td><code>{ col, width }</code></td></tr>
+          <tr><td><code>data:patch</code></td><td><code>{ patches }</code></td></tr>
+        </table>
+      </section>
+
+      <section id="themes">
+        <h2>Themes</h2>
+<pre><code><span class="keyword">import</span> { THEME_DARK, THEME_MINIMAL } <span class="keyword">from</span> <span class="string">'wandertable'</span>;
+
+<span class="keyword">new</span> <span class="fn">WanderTable</span>(el, { theme: THEME_DARK });</code></pre>
+        <p>Or use CSS variables: <code>--wt-bg</code>, <code>--wt-cell-bg</code>, <code>--wt-cell-text</code>, <code>--wt-header-bg</code>, <code>--wt-grid-line</code>, <code>--wt-sel-bg</code>, <code>--wt-focus-border</code>, etc.</p>
+      </section>
+
+      <p style="margin-top:60px;color:var(--c-text-soft);font-size:12px;text-align:center">WanderTable &mdash; MIT License</p>
+    </main>
+  </div>
+
+  <!-- Live demo -->
+  <script type="module">
+    import '../src/styles.css';
+    import { WanderTable } from '../src/index.ts';
+
+    const el = document.getElementById('demo-grid');
+    if (el) {
+      const table = new WanderTable(el, {
+        rowCount: 100,
+        colCount: 10,
+        defaultRowHeight: 30,
+        defaultColWidth: 110,
+        columns: [
+          { label: 'Name', width: 140 },
+          { label: 'Status', type: 'badge', width: 100 },
+          { label: 'Score', type: 'number', width: 80 },
+          { label: 'Progress', type: 'progress', width: 130 },
+          { label: 'Active', type: 'checkbox', width: 70 },
+        ],
+      });
+
+      const names = ['Alice','Bob','Charlie','Diana','Eve','Frank','Grace','Hank'];
+      const statuses = ['active','pending','inactive','warning'];
+      const patches = [];
+      for (let r = 0; r < 30; r++) {
+        patches.push(
+          { row: r, col: 0, data: { value: names[r % names.length] + ' ' + r } },
+          { row: r, col: 1, data: { value: statuses[r % statuses.length] } },
+          { row: r, col: 2, data: { value: Math.floor(Math.random() * 100) } },
+          { row: r, col: 3, data: { value: Math.floor(Math.random() * 100) } },
+          { row: r, col: 4, data: { value: r % 3 !== 0 } },
+        );
+      }
+      table.applyPatch(patches);
+    }
+  </script>
+
+  <!-- Sidebar active link tracking -->
+  <script>
+    const links = document.querySelectorAll('.nav-link');
+    const sections = document.querySelectorAll('section[id]');
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(e => {
+        if (e.isIntersecting) {
+          links.forEach(l => l.classList.remove('active'));
+          const active = document.querySelector(`.nav-link[href="#${e.target.id}"]`);
+          if (active) active.classList.add('active');
+        }
+      });
+    }, { threshold: 0.3 });
+    sections.forEach(s => observer.observe(s));
+  </script>
+</body>
+</html>
