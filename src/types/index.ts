@@ -242,6 +242,11 @@ export interface WanderTableOptions {
   colCount?: number;
   defaultRowHeight?: number;
   defaultColWidth?: number;
+  /**
+   * Stretch columns to fill the container width. Columns without an explicit
+   * `width` share the remaining space (recomputed on container resize).
+   */
+  fitColumns?: boolean;
   readOnly?: boolean;
   showRowHeaders?: boolean;
   showColHeaders?: boolean;

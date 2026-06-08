@@ -49,6 +49,44 @@ export class ColumnModel {
     return this.prefixSums[this.widths.length] ?? 0;
   }
 
+  /**
+   * Distribute the container width across "flex" columns — those without an
+   * explicit `width` in their config. Columns with a fixed width keep it; the
+   * remaining space is split evenly among the flex columns (respecting each
+   * column's minWidth, default 80). Returns true if any width changed.
+   */
+  fitToWidth(containerW: number): boolean {
+    const flexCols: number[] = [];
+    let fixedTotal = 0;
+    for (let i = 0; i < this.widths.length; i++) {
+      const w = this.configs[i]?.width;
+      if (w == null) {
+        flexCols.push(i);
+      } else {
+        fixedTotal += w;
+      }
+    }
+    if (flexCols.length === 0) {
+      return false;
+    }
+    const remaining = Math.max(0, containerW - fixedTotal);
+    const per = Math.floor(remaining / flexCols.length);
+    let changed = false;
+    for (const i of flexCols) {
+      const min = this.configs[i]?.minWidth ?? 80;
+      const max = this.configs[i]?.maxWidth ?? Infinity;
+      const next = Math.max(min, Math.min(max, per));
+      if (this.widths[i] !== next) {
+        this.widths[i] = next;
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.prefixSums = this.buildPrefixSums();
+    }
+    return changed;
+  }
+
   getConfig(col: number): ColumnConfig | undefined {
     return this.configs[col];
   }

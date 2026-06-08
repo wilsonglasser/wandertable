@@ -70,6 +70,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
   private _infiniteScrollHandler: (() => void) | null = null;
   private _lazyLoadHandler: (() => void) | null = null;
   private _keydownHandler: ((e: KeyboardEvent) => void) | null = null;
+  private _resizeObserver: ResizeObserver | null = null;
 
   constructor(container: HTMLElement, options: WanderTableOptions = {}) {
     super();
@@ -338,6 +339,22 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
           }
         };
         sc.addEventListener('scroll', this._infiniteScrollHandler, { passive: true });
+      }
+    }
+
+    // Fit columns to the container width (flex columns share the leftover space),
+    // recomputed when the container resizes.
+    if (options.fitColumns) {
+      const fit = () => {
+        const w = this.renderer.getContainer().clientWidth;
+        if (w > 0 && this.columns.fitToWidth(w)) {
+          this.refresh();
+        }
+      };
+      fit();
+      if (typeof ResizeObserver !== 'undefined') {
+        this._resizeObserver = new ResizeObserver(() => fit());
+        this._resizeObserver.observe(this.renderer.getContainer());
       }
     }
 
@@ -1005,6 +1022,10 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
     if (this._lazyLoadHandler) {
       window.removeEventListener('scroll', this._lazyLoadHandler);
       this.renderer.getScrollContainer().removeEventListener('scroll', this._lazyLoadHandler);
+    }
+    if (this._resizeObserver) {
+      this._resizeObserver.disconnect();
+      this._resizeObserver = null;
     }
     this.fillHandle.destroy();
     this.columnReorder.destroy();
