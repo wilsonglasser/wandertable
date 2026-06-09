@@ -33,6 +33,16 @@
   border-bottom: 1px solid var(--wt-grid-line, #e2e8f0);
 }
 
+/* Auto header height — let multi-line header labels wrap and top-align instead
+   of clipping at the fixed headerHeight. Horizontal alignment stays driven by
+   the per-column inline justify-content / text-align. */
+.wt-root--auto-header .wt-header-cell {
+  align-items: flex-start;
+  white-space: normal;
+  line-height: 1.2;
+  padding: 6px 8px;
+}
+
 /* Freeze line — crisp divider on the last frozen column so the pinned region
    reads as separate from the scrolling content. !important so it survives any
    preset that strips cell borders (e.g. 'standard'). */

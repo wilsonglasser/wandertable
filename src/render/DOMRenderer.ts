@@ -23,6 +23,7 @@ interface RendererContext {
   frozenRows: number;
   frozenCols: number;
   autoRowHeight: boolean;
+  autoHeaderHeight: boolean;
   showGridLines: boolean;
   showBorder: boolean;
   preset?: string;
@@ -52,6 +53,8 @@ export class DOMRenderer {
 
   private rafId = 0;
   private needsRender = false;
+  /** Measured header height when autoHeaderHeight is on (null = use theme). */
+  private measuredHeaderHeight: number | null = null;
 
   onScroll: ((viewport: Viewport) => void) | null = null;
   onCellClick: ((row: number, col: number, event: MouseEvent) => void) | null = null;
@@ -115,13 +118,49 @@ export class DOMRenderer {
     this.container.classList.toggle('wt-root--no-border', !ctx.showBorder);
     this.container.classList.toggle('wt-root--preset-standard', ctx.preset === 'standard');
     this.container.classList.toggle('wt-root--preset-invisible', ctx.preset === 'invisible');
+    this.container.classList.toggle('wt-root--auto-header', ctx.autoHeaderHeight);
     if (ctx.layout === 'auto') {
       this.container.classList.add('wt-root--auto');
       this.scrollContainer.classList.add('wt-scroll-container--auto');
     }
     this.applyTheme();
+    this.measureHeaderHeight();
     this.updateLayout();
     this.scheduleRender();
+  }
+
+  /**
+   * Measure the tallest wrapped header label across ALL columns once (not per
+   * scroll frame) and grow the header to fit. Only runs when autoHeaderHeight is
+   * on. Uses a hidden probe so it doesn't disturb the rendered headers.
+   */
+  measureHeaderHeight(): void {
+    if (!this.ctx.autoHeaderHeight || !this.ctx.showColHeaders) return;
+    const { columns, theme } = this.ctx;
+    const innerDiv = this.colHeaderEl.querySelector('.wt-col-headers-inner') as HTMLElement
+      ?? this.createColHeadersInner();
+
+    const probe = document.createElement('div');
+    probe.className = 'wt-header-cell wt-col-header-cell';
+    probe.style.position = 'absolute';
+    probe.style.visibility = 'hidden';
+    probe.style.height = 'auto';
+    probe.style.transform = 'translateX(-99999px)';
+    innerDiv.appendChild(probe);
+
+    let maxH = theme.headerHeight!;
+    for (let col = 0; col < columns.count; col++) {
+      probe.style.width = `${columns.getWidth(col)}px`;
+      probe.textContent = columns.getConfig(col)?.label ?? CM.columnLabel(col);
+      if (probe.scrollHeight > maxH) maxH = probe.scrollHeight;
+    }
+    innerDiv.removeChild(probe);
+
+    maxH = Math.min(maxH, 200);
+    if (this.measuredHeaderHeight !== maxH) {
+      this.measuredHeaderHeight = maxH;
+      this.updateLayout();
+    }
   }
 
   private applyTheme(): void {
@@ -153,7 +192,10 @@ export class DOMRenderer {
       : rows.getY(visibleRows);
 
     const headerLevels = this.ctx.headerRows ? this.ctx.headerRows.length : 1;
-    const headerH = showColHeaders ? theme.headerHeight! * headerLevels : 0;
+    const baseHeaderH = (this.ctx.autoHeaderHeight && this.measuredHeaderHeight)
+      ? this.measuredHeaderHeight
+      : theme.headerHeight! * headerLevels;
+    const headerH = showColHeaders ? baseHeaderH : 0;
     const headerW = showRowHeaders ? theme.rowHeaderWidth! : 0;
 
     if (this.ctx.layout === 'auto') {
@@ -580,11 +622,12 @@ export class DOMRenderer {
         cell.style.transform = `translateX(${isFrozenCol ? columns.getX(col) + scrollX : columns.getX(col)}px)`;
         cell.style.zIndex = isFrozenCol ? '3' : '';
         cell.style.width = `${columns.getWidth(col)}px`;
-        cell.style.height = `${theme.headerHeight}px`;
+        cell.style.height = `${(this.ctx.autoHeaderHeight && this.measuredHeaderHeight) ? this.measuredHeaderHeight : theme.headerHeight}px`;
         cell.textContent = this.ctx.columns.getConfig(col)?.label ?? CM.columnLabel(col);
         const hAlign = this.ctx.columns.getConfig(col)?.align;
         cell.style.justifyContent =
           hAlign === 'left' ? 'flex-start' : hAlign === 'right' ? 'flex-end' : 'center';
+        cell.style.textAlign = hAlign === 'left' ? 'left' : hAlign === 'right' ? 'right' : 'center';
         cell.classList.toggle('wt-col-header-cell--frozen-edge', frozenCols > 0 && col === frozenCols - 1);
         cell.dataset.col = String(col);
       }
@@ -725,8 +768,44 @@ export class DOMRenderer {
   // ── Event handlers ──
 
   private handleScroll = (): void => {
+    // Re-pin frozen columns synchronously, in the scroll event itself, so they
+    // track the native scroll in the SAME frame. Doing it only in the rAF
+    // render (scheduleRender) leaves them one frame behind, which reads as the
+    // frozen columns "floating"/chasing the scroll. Cheap: a few cells.
+    this.repositionFrozenSync();
     this.scheduleRender();
   };
+
+  /** Synchronously counter native scroll on the frozen columns + header. */
+  private repositionFrozenSync(): void {
+    const frozenCols = this.ctx.frozenCols;
+    if (frozenCols <= 0) return;
+    const { columns } = this.ctx;
+    const scrollX = this.scrollContainer.scrollLeft;
+
+    // Body: the first `frozenCols` cells of each active row are the frozen
+    // columns (renderRow always renders the frozen range first).
+    for (const pooled of this.activeRows.values()) {
+      for (let ci = 0; ci < frozenCols && ci < pooled.cells.length; ci++) {
+        const cellEl = pooled.cells[ci];
+        if (cellEl.style.display === 'none') continue;
+        cellEl.style.transform = `translateX(${columns.getX(ci) + scrollX}px)`;
+      }
+    }
+
+    // Header: keep it scroll-synced and re-pin its frozen cells.
+    if (this.ctx.showColHeaders && (!this.ctx.headerRows || this.ctx.headerRows.length <= 1)) {
+      this.colHeaderEl.scrollLeft = scrollX;
+      const innerDiv = this.colHeaderEl.querySelector('.wt-col-headers-inner') as HTMLElement | null;
+      if (innerDiv) {
+        for (let ci = 0; ci < frozenCols && ci < innerDiv.children.length; ci++) {
+          const cell = innerDiv.children[ci] as HTMLElement;
+          if (cell.style.display === 'none') continue;
+          cell.style.transform = `translateX(${columns.getX(ci) + scrollX}px)`;
+        }
+      }
+    }
+  }
 
   private handleMouseDown = (e: MouseEvent): void => {
     const cell = this.getCellFromEvent(e);

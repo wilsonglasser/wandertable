@@ -280,6 +280,11 @@ export interface WanderTableOptions {
   onLoadMore?: (direction: 'down' | 'right') => void;
   /** Automatically fit row height to cell content after render. Default: false */
   autoRowHeight?: boolean;
+  /**
+   * Grow the column header to fit wrapped labels (multi-line headers) instead
+   * of clipping them at the fixed headerHeight. Default: false.
+   */
+  autoHeaderHeight?: boolean;
   /** Show grid lines between cells. Default: true */
   showGridLines?: boolean;
   /** Show border around the grid. Default: true */

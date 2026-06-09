@@ -183,6 +183,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
       frozenRows: options.frozenRows ?? 0,
       frozenCols: options.frozenCols ?? 0,
       autoRowHeight: options.autoRowHeight ?? false,
+      autoHeaderHeight: options.autoHeaderHeight ?? false,
       showGridLines: options.showGridLines ?? true,
       showBorder: options.showBorder ?? true,
       preset: options.preset,
