@@ -48,6 +48,13 @@ export class DOMRenderer {
 
   private rowPool: PooledRow[] = [];
   private activeRows = new Map<number, PooledRow>();
+  // Frozen columns live in their own CSS position:sticky layers (body + header)
+  // so they pin horizontally via the browser compositor — smooth, no per-frame
+  // JS transform — while scrolling vertically with the viewport.
+  private frozenLayer!: HTMLElement;
+  private frozenHeaderLayer: HTMLElement | null = null;
+  private frozenRowPool: PooledRow[] = [];
+  private activeFrozenRows = new Map<number, PooledRow>();
   private viewport: Viewport = { startRow: 0, endRow: 0, startCol: 0, endCol: 0, scrollX: 0, scrollY: 0 };
   private ctx!: RendererContext;
 
@@ -93,8 +100,17 @@ export class DOMRenderer {
     this.viewportEl = document.createElement('div');
     this.viewportEl.className = 'wt-viewport';
 
+    // Sticky layer for frozen columns (pins horizontally, scrolls vertically).
+    // Child of the scroll-container so its sticky containing block spans the
+    // full scroll width (a viewport child only spans the client width and would
+    // unstick once scrolled past it).
+    this.frozenLayer = document.createElement('div');
+    this.frozenLayer.className = 'wt-frozen-layer';
+    this.frozenLayer.style.display = 'none';
+
     this.scrollContainer.appendChild(this.scrollSentinel);
     this.scrollContainer.appendChild(this.viewportEl);
+    this.scrollContainer.appendChild(this.frozenLayer);
 
     this.container.appendChild(this.cornerEl);
     this.container.appendChild(this.colHeaderEl);
@@ -105,6 +121,10 @@ export class DOMRenderer {
     this.viewportEl.addEventListener('mousedown', this.handleMouseDown);
     this.viewportEl.addEventListener('dblclick', this.handleDblClick);
     this.viewportEl.addEventListener('contextmenu', this.handleContextMenu);
+    // Frozen layer mirrors the viewport interactions (it lives outside viewport).
+    this.frozenLayer.addEventListener('mousedown', this.handleMouseDown);
+    this.frozenLayer.addEventListener('dblclick', this.handleDblClick);
+    this.frozenLayer.addEventListener('contextmenu', this.handleContextMenu);
     this.colHeaderEl.addEventListener('mousedown', this.handleColHeaderMouse);
     this.colHeaderEl.addEventListener('contextmenu', this.handleColHeaderContextMenu);
     this.rowHeaderEl.addEventListener('mousedown', this.handleRowHeaderMouse);
@@ -351,8 +371,11 @@ export class DOMRenderer {
 
     // Render all needed rows
     for (const r of visibleSet) {
-      this.renderRow(r, vp, scrollX, scrollY, frozenRows, frozenCols);
+      this.renderRow(r, vp, scrollY, frozenRows, frozenCols);
     }
+
+    // Frozen columns in their own sticky layer.
+    this.renderFrozenColumns(visibleSet, scrollY, frozenRows);
 
     // Auto row height: measure actual cell content and adjust
     if (this.ctx.autoRowHeight) {
@@ -402,21 +425,18 @@ export class DOMRenderer {
   private renderRow(
     rowIndex: number,
     vp: Viewport,
-    scrollX: number,
     scrollY: number,
     frozenRows: number,
     frozenCols: number,
   ): void {
-    const { columns, rows, data, selection, viewMapping } = this.ctx;
+    const { columns, rows, viewMapping } = this.ctx;
     const dataRow = viewMapping.toDataRow(rowIndex);
     let pooled = this.activeRows.get(rowIndex);
     const y = rows.getY(rowIndex);
     const h = rows.getHeight(rowIndex);
-    // Columns to render = frozen columns (always) ∪ viewport columns. Column
-    // virtualization only walks startCol..endCol, so without forcing the frozen
-    // range in, frozen columns vanish once the viewport scrolls past them.
+    // Frozen columns render in a separate sticky layer (renderFrozenColumns),
+    // so the main row renders only the non-frozen viewport columns.
     const renderCols: number[] = [];
-    for (let c = 0; c < frozenCols; c++) renderCols.push(c);
     for (let c = vp.startCol; c <= vp.endCol; c++) {
       if (c >= frozenCols) renderCols.push(c);
     }
@@ -472,87 +492,165 @@ export class DOMRenderer {
         cellEl.style.zIndex = '';
       }
 
-      const isFrozenCol = col < frozenCols;
-      const cellX = isFrozenCol ? x + scrollX : x;
-      cellEl.style.transform = `translateX(${cellX}px)`;
+      cellEl.style.transform = `translateX(${x}px)`;
       cellEl.style.width = `${w}px`;
       cellEl.style.height = `${cellH}px`;
       cellEl.style.display = '';
-      if (isFrozenCol || isFrozenRow) {
-        // Frozen cells need higher z-index to stay above scrolling content
-        cellEl.style.zIndex = (isFrozenCol && isFrozenRow) ? '4' : '3';
+      if (isFrozenRow) {
+        cellEl.style.zIndex = '3';
       }
       cellEl.dataset.row = String(dataRow);
       cellEl.dataset.col = String(col);
 
-      const cellData = data.getCell(dataRow, col);
-      const state: CellState = {
-        selected: selection.isSelected(dataRow, col),
-        focused: selection.isFocused(dataRow, col),
-        editing: false,
-        hover: false,
-      };
-
-      // Apply selection classes
-      cellEl.classList.toggle('wt-cell--selected', state.selected);
-      cellEl.classList.toggle('wt-cell--focused', state.focused);
-
-      // Apply cell style
-      if (cellData?.style) {
-        const cs = cellData.style;
-        if (cs.bgColor) cellEl.style.backgroundColor = cs.bgColor;
-        else cellEl.style.backgroundColor = '';
-        if (cs.textColor) cellEl.style.color = cs.textColor;
-        else cellEl.style.color = '';
-        if (cs.textAlign) cellEl.style.textAlign = cs.textAlign;
-        else cellEl.style.textAlign = '';
-        if (cs.borderLeft) cellEl.style.borderLeft = cs.borderLeft;
-        else cellEl.style.borderLeft = '';
-        if (cs.borderRight) cellEl.style.borderRight = cs.borderRight;
-        else cellEl.style.borderRight = '';
-        if (cs.borderTop) cellEl.style.borderTop = cs.borderTop;
-        else cellEl.style.borderTop = '';
-        if (cs.borderBottom) cellEl.style.borderBottom = cs.borderBottom;
-        else cellEl.style.borderBottom = '';
-      } else {
-        cellEl.style.backgroundColor = '';
-        cellEl.style.color = '';
-        cellEl.style.textAlign = '';
-        cellEl.style.borderLeft = '';
-        cellEl.style.borderRight = '';
-        cellEl.style.borderTop = '';
-        cellEl.style.borderBottom = '';
-      }
-
-      if (cellData?.className) {
-        cellEl.className = `wt-cell ${cellData.className}`;
-        if (state.selected) cellEl.classList.add('wt-cell--selected');
-        if (state.focused) cellEl.classList.add('wt-cell--focused');
-      }
-
-      // Column alignment → flex justify (cells are flex containers, so
-      // text-align alone does not move a single content node). Lets
-      // `column.align` actually position content; per-cell style.textAlign
-      // (set above) still wins for text.
-      const colAlign = this.ctx.columns.getConfig(col)?.align;
-      cellEl.style.justifyContent =
-        colAlign === 'center' ? 'center' : colAlign === 'right' ? 'flex-end' : '';
-      if (colAlign && !cellData?.style?.textAlign) {
-        cellEl.style.textAlign = colAlign;
-      }
-
-      // Crisp divider on the last frozen column (the freeze line).
-      cellEl.classList.toggle('wt-cell--frozen-edge', frozenCols > 0 && col === frozenCols - 1);
-
-      // Render content
-      const type = cellData?.type ?? this.ctx.columns.getConfig(col)?.type ?? this.ctx.defaultCellType;
-      const renderer = this.ctx.renderers.get(type) ?? this.ctx.defaultRenderer;
-      renderer.render(cellEl, cellData, state);
+      this.renderCellContent(cellEl, dataRow, col);
     }
 
     // Hide extra cells
     for (let ci = colCount; ci < pooled.cells.length; ci++) {
       pooled.cells[ci].style.display = 'none';
+    }
+  }
+
+  /** Cell content/state/style/renderer — shared by main rows and the frozen layer. */
+  private renderCellContent(cellEl: HTMLElement, dataRow: number, col: number): void {
+    const { data, selection } = this.ctx;
+    const cellData = data.getCell(dataRow, col);
+    const state: CellState = {
+      selected: selection.isSelected(dataRow, col),
+      focused: selection.isFocused(dataRow, col),
+      editing: false,
+      hover: false,
+    };
+
+    cellEl.classList.toggle('wt-cell--selected', state.selected);
+    cellEl.classList.toggle('wt-cell--focused', state.focused);
+
+    if (cellData?.style) {
+      const cs = cellData.style;
+      cellEl.style.backgroundColor = cs.bgColor ?? '';
+      cellEl.style.color = cs.textColor ?? '';
+      cellEl.style.textAlign = cs.textAlign ?? '';
+      cellEl.style.borderLeft = cs.borderLeft ?? '';
+      cellEl.style.borderRight = cs.borderRight ?? '';
+      cellEl.style.borderTop = cs.borderTop ?? '';
+      cellEl.style.borderBottom = cs.borderBottom ?? '';
+    } else {
+      cellEl.style.backgroundColor = '';
+      cellEl.style.color = '';
+      cellEl.style.textAlign = '';
+      cellEl.style.borderLeft = '';
+      cellEl.style.borderRight = '';
+      cellEl.style.borderTop = '';
+      cellEl.style.borderBottom = '';
+    }
+
+    if (cellData?.className) {
+      cellEl.className = `wt-cell ${cellData.className}`;
+      if (state.selected) cellEl.classList.add('wt-cell--selected');
+      if (state.focused) cellEl.classList.add('wt-cell--focused');
+    }
+
+    // Column alignment → flex justify (cells are flex; text-align alone does not
+    // move a single content node). Per-cell style.textAlign still wins for text.
+    const colAlign = this.ctx.columns.getConfig(col)?.align;
+    cellEl.style.justifyContent =
+      colAlign === 'center' ? 'center' : colAlign === 'right' ? 'flex-end' : '';
+    if (colAlign && !cellData?.style?.textAlign) {
+      cellEl.style.textAlign = colAlign;
+    }
+
+    const type = cellData?.type ?? this.ctx.columns.getConfig(col)?.type ?? this.ctx.defaultCellType;
+    const renderer = this.ctx.renderers.get(type) ?? this.ctx.defaultRenderer;
+    renderer.render(cellEl, cellData, state);
+  }
+
+  /** Render the frozen columns into the sticky layer (pinned horizontally). */
+  private renderFrozenColumns(visibleSet: Set<number>, scrollY: number, frozenRows: number): void {
+    const frozenCols = this.ctx.frozenCols;
+    if (frozenCols <= 0) {
+      this.frozenLayer.style.display = 'none';
+      return;
+    }
+    const { columns, rows, viewMapping } = this.ctx;
+
+    let frozenWidth = 0;
+    for (let c = 0; c < frozenCols; c++) frozenWidth += columns.getWidth(c);
+    const visibleRows = viewMapping.visibleRowCount;
+    const totalH = visibleRows === rows.count ? rows.getTotalHeight() : rows.getY(visibleRows);
+    this.frozenLayer.style.display = '';
+    this.frozenLayer.style.width = `${frozenWidth}px`;
+    this.frozenLayer.style.height = `${totalH}px`;
+
+    // Recycle frozen rows that left the viewport.
+    for (const [rowIdx, pooled] of this.activeFrozenRows) {
+      if (!visibleSet.has(rowIdx)) {
+        pooled.el.style.display = 'none';
+        this.frozenRowPool.push(pooled);
+        this.activeFrozenRows.delete(rowIdx);
+      }
+    }
+
+    const { merges } = this.ctx;
+    for (const rowIndex of visibleSet) {
+      const dataRow = viewMapping.toDataRow(rowIndex);
+      let pooled = this.activeFrozenRows.get(rowIndex);
+      const y = rows.getY(rowIndex);
+      const h = rows.getHeight(rowIndex);
+      const isFrozenRow = rowIndex < frozenRows;
+
+      if (!pooled) {
+        pooled = this.acquireFrozenRow(frozenCols);
+        pooled.rowIndex = rowIndex;
+        this.activeFrozenRows.set(rowIndex, pooled);
+      }
+
+      const el = pooled.el;
+      el.style.display = '';
+      el.style.transform = `translateY(${isFrozenRow ? y + scrollY : y}px)`;
+      el.style.height = `${h}px`;
+      el.style.zIndex = isFrozenRow ? '2' : '';
+      el.dataset.row = String(dataRow);
+
+      this.ensureFrozenCells(pooled, frozenCols);
+      for (let col = 0; col < frozenCols; col++) {
+        const cellEl = pooled.cells[col];
+        if (merges.isHidden(dataRow, col)) {
+          cellEl.style.display = 'none';
+          continue;
+        }
+        cellEl.style.transform = `translateX(${columns.getX(col)}px)`;
+        cellEl.style.width = `${columns.getWidth(col)}px`;
+        cellEl.style.height = `${h}px`;
+        cellEl.style.display = '';
+        cellEl.style.zIndex = '';
+        cellEl.dataset.row = String(dataRow);
+        cellEl.dataset.col = String(col);
+        this.renderCellContent(cellEl, dataRow, col);
+      }
+      for (let ci = frozenCols; ci < pooled.cells.length; ci++) {
+        pooled.cells[ci].style.display = 'none';
+      }
+    }
+  }
+
+  private acquireFrozenRow(cellCount: number): PooledRow {
+    let pooled = this.frozenRowPool.pop();
+    if (!pooled) {
+      const el = document.createElement('div');
+      el.className = 'wt-row wt-frozen-row';
+      this.frozenLayer.appendChild(el);
+      pooled = { el, cells: [], rowIndex: -1 };
+    }
+    this.ensureFrozenCells(pooled, cellCount);
+    return pooled;
+  }
+
+  private ensureFrozenCells(pooled: PooledRow, count: number): void {
+    while (pooled.cells.length < count) {
+      const cell = document.createElement('div');
+      cell.className = 'wt-cell';
+      pooled.el.appendChild(cell);
+      pooled.cells.push(cell);
     }
   }
 
@@ -598,44 +696,75 @@ export class DOMRenderer {
         }
       }
     } else {
-      // Simple single-row headers. Mirror the body: force the frozen columns
-      // into the render set and counter the header's own scrollLeft so they
-      // stay pinned while the rest scrolls.
+      // Simple single-row headers. Non-frozen columns scroll in the inner;
+      // frozen columns live in a sticky header layer (pinned, matches the body).
       const frozenCols = this.ctx.frozenCols;
-      const headerCols: number[] = [];
-      for (let c = 0; c < frozenCols; c++) headerCols.push(c);
+      const headerH = (this.ctx.autoHeaderHeight && this.measuredHeaderHeight)
+        ? this.measuredHeaderHeight
+        : theme.headerHeight!;
+
+      const cols: number[] = [];
       for (let c = vp.startCol; c <= vp.endCol; c++) {
-        if (c >= frozenCols) headerCols.push(c);
+        if (c >= frozenCols) cols.push(c);
       }
-      const needed = headerCols.length;
+      const needed = cols.length;
       while (innerDiv.children.length < needed) {
         const cell = document.createElement('div');
         cell.className = 'wt-header-cell wt-col-header-cell';
         innerDiv.appendChild(cell);
       }
-
       for (let i = 0; i < needed; i++) {
-        const col = headerCols[i];
-        const isFrozenCol = col < frozenCols;
-        const cell = innerDiv.children[i] as HTMLElement;
-        cell.style.display = '';
-        cell.style.transform = `translateX(${isFrozenCol ? columns.getX(col) + scrollX : columns.getX(col)}px)`;
-        cell.style.zIndex = isFrozenCol ? '3' : '';
-        cell.style.width = `${columns.getWidth(col)}px`;
-        cell.style.height = `${(this.ctx.autoHeaderHeight && this.measuredHeaderHeight) ? this.measuredHeaderHeight : theme.headerHeight}px`;
-        cell.textContent = this.ctx.columns.getConfig(col)?.label ?? CM.columnLabel(col);
-        const hAlign = this.ctx.columns.getConfig(col)?.align;
-        cell.style.justifyContent =
-          hAlign === 'left' ? 'flex-start' : hAlign === 'right' ? 'flex-end' : 'center';
-        cell.style.textAlign = hAlign === 'left' ? 'left' : hAlign === 'right' ? 'right' : 'center';
-        cell.classList.toggle('wt-col-header-cell--frozen-edge', frozenCols > 0 && col === frozenCols - 1);
-        cell.dataset.col = String(col);
+        this.styleHeaderCell(innerDiv.children[i] as HTMLElement, cols[i], headerH);
       }
-
       for (let i = needed; i < innerDiv.children.length; i++) {
         (innerDiv.children[i] as HTMLElement).style.display = 'none';
       }
+
+      if (frozenCols > 0) {
+        const layer = this.ensureFrozenHeaderLayer();
+        layer.style.display = '';
+        let fw = 0;
+        for (let c = 0; c < frozenCols; c++) fw += columns.getWidth(c);
+        layer.style.width = `${fw}px`;
+        layer.style.height = `${headerH}px`;
+        while (layer.children.length < frozenCols) {
+          const cell = document.createElement('div');
+          cell.className = 'wt-header-cell wt-col-header-cell';
+          layer.appendChild(cell);
+        }
+        for (let c = 0; c < frozenCols; c++) {
+          this.styleHeaderCell(layer.children[c] as HTMLElement, c, headerH);
+        }
+        for (let c = frozenCols; c < layer.children.length; c++) {
+          (layer.children[c] as HTMLElement).style.display = 'none';
+        }
+      } else if (this.frozenHeaderLayer) {
+        this.frozenHeaderLayer.style.display = 'none';
+      }
     }
+  }
+
+  private styleHeaderCell(cell: HTMLElement, col: number, headerH: number): void {
+    const { columns } = this.ctx;
+    cell.style.display = '';
+    cell.style.transform = `translateX(${columns.getX(col)}px)`;
+    cell.style.width = `${columns.getWidth(col)}px`;
+    cell.style.height = `${headerH}px`;
+    cell.textContent = columns.getConfig(col)?.label ?? CM.columnLabel(col);
+    const hAlign = columns.getConfig(col)?.align;
+    cell.style.justifyContent = hAlign === 'left' ? 'flex-start' : hAlign === 'right' ? 'flex-end' : 'center';
+    cell.style.textAlign = hAlign === 'left' ? 'left' : hAlign === 'right' ? 'right' : 'center';
+    cell.dataset.col = String(col);
+  }
+
+  private ensureFrozenHeaderLayer(): HTMLElement {
+    if (!this.frozenHeaderLayer) {
+      const layer = document.createElement('div');
+      layer.className = 'wt-frozen-header-layer';
+      this.colHeaderEl.appendChild(layer);
+      this.frozenHeaderLayer = layer;
+    }
+    return this.frozenHeaderLayer;
   }
 
   private createColHeadersInner(): HTMLElement {
@@ -768,44 +897,14 @@ export class DOMRenderer {
   // ── Event handlers ──
 
   private handleScroll = (): void => {
-    // Re-pin frozen columns synchronously, in the scroll event itself, so they
-    // track the native scroll in the SAME frame. Doing it only in the rAF
-    // render (scheduleRender) leaves them one frame behind, which reads as the
-    // frozen columns "floating"/chasing the scroll. Cheap: a few cells.
-    this.repositionFrozenSync();
+    // Frozen columns/header are CSS position:sticky (compositor-pinned), so no
+    // per-frame JS repositioning is needed — just re-render the virtualized
+    // viewport. The header scrollLeft is synced here so it tracks immediately.
+    if (this.ctx.showColHeaders) {
+      this.colHeaderEl.scrollLeft = this.scrollContainer.scrollLeft;
+    }
     this.scheduleRender();
   };
-
-  /** Synchronously counter native scroll on the frozen columns + header. */
-  private repositionFrozenSync(): void {
-    const frozenCols = this.ctx.frozenCols;
-    if (frozenCols <= 0) return;
-    const { columns } = this.ctx;
-    const scrollX = this.scrollContainer.scrollLeft;
-
-    // Body: the first `frozenCols` cells of each active row are the frozen
-    // columns (renderRow always renders the frozen range first).
-    for (const pooled of this.activeRows.values()) {
-      for (let ci = 0; ci < frozenCols && ci < pooled.cells.length; ci++) {
-        const cellEl = pooled.cells[ci];
-        if (cellEl.style.display === 'none') continue;
-        cellEl.style.transform = `translateX(${columns.getX(ci) + scrollX}px)`;
-      }
-    }
-
-    // Header: keep it scroll-synced and re-pin its frozen cells.
-    if (this.ctx.showColHeaders && (!this.ctx.headerRows || this.ctx.headerRows.length <= 1)) {
-      this.colHeaderEl.scrollLeft = scrollX;
-      const innerDiv = this.colHeaderEl.querySelector('.wt-col-headers-inner') as HTMLElement | null;
-      if (innerDiv) {
-        for (let ci = 0; ci < frozenCols && ci < innerDiv.children.length; ci++) {
-          const cell = innerDiv.children[ci] as HTMLElement;
-          if (cell.style.display === 'none') continue;
-          cell.style.transform = `translateX(${columns.getX(ci) + scrollX}px)`;
-        }
-      }
-    }
-  }
 
   private handleMouseDown = (e: MouseEvent): void => {
     const cell = this.getCellFromEvent(e);
