@@ -910,6 +910,13 @@ export class DOMRenderer {
   };
 
   private handleMouseDown = (e: MouseEvent): void => {
+    // Let interactive content inside a cell (links, buttons, form controls)
+    // handle the event itself — otherwise cell selection swallows the click and
+    // an <a> rendered in a cell never navigates.
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('a, button, input, select, textarea, label')) {
+      return;
+    }
     const cell = this.getCellFromEvent(e);
     if (cell) this.onCellClick?.(cell.row, cell.col, e);
   };
