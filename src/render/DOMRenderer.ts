@@ -370,7 +370,15 @@ export class DOMRenderer {
     let pooled = this.activeRows.get(rowIndex);
     const y = rows.getY(rowIndex);
     const h = rows.getHeight(rowIndex);
-    const colCount = vp.endCol - vp.startCol + 1;
+    // Columns to render = frozen columns (always) ∪ viewport columns. Column
+    // virtualization only walks startCol..endCol, so without forcing the frozen
+    // range in, frozen columns vanish once the viewport scrolls past them.
+    const renderCols: number[] = [];
+    for (let c = 0; c < frozenCols; c++) renderCols.push(c);
+    for (let c = vp.startCol; c <= vp.endCol; c++) {
+      if (c >= frozenCols) renderCols.push(c);
+    }
+    const colCount = renderCols.length;
 
     const isFrozenRow = rowIndex < frozenRows;
 
@@ -395,7 +403,7 @@ export class DOMRenderer {
     // Render each cell
     const { merges } = this.ctx;
     for (let ci = 0; ci < colCount; ci++) {
-      const col = vp.startCol + ci;
+      const col = renderCols[ci];
       const cellEl = pooled.cells[ci];
 
       // Skip cells hidden by a merge
@@ -491,6 +499,9 @@ export class DOMRenderer {
         cellEl.style.textAlign = colAlign;
       }
 
+      // Crisp divider on the last frozen column (the freeze line).
+      cellEl.classList.toggle('wt-cell--frozen-edge', frozenCols > 0 && col === frozenCols - 1);
+
       // Render content
       const type = cellData?.type ?? this.ctx.columns.getConfig(col)?.type ?? this.ctx.defaultCellType;
       const renderer = this.ctx.renderers.get(type) ?? this.ctx.defaultRenderer;
@@ -545,8 +556,16 @@ export class DOMRenderer {
         }
       }
     } else {
-      // Simple single-row headers
-      const needed = vp.endCol - vp.startCol + 1;
+      // Simple single-row headers. Mirror the body: force the frozen columns
+      // into the render set and counter the header's own scrollLeft so they
+      // stay pinned while the rest scrolls.
+      const frozenCols = this.ctx.frozenCols;
+      const headerCols: number[] = [];
+      for (let c = 0; c < frozenCols; c++) headerCols.push(c);
+      for (let c = vp.startCol; c <= vp.endCol; c++) {
+        if (c >= frozenCols) headerCols.push(c);
+      }
+      const needed = headerCols.length;
       while (innerDiv.children.length < needed) {
         const cell = document.createElement('div');
         cell.className = 'wt-header-cell wt-col-header-cell';
@@ -554,16 +573,19 @@ export class DOMRenderer {
       }
 
       for (let i = 0; i < needed; i++) {
-        const col = vp.startCol + i;
+        const col = headerCols[i];
+        const isFrozenCol = col < frozenCols;
         const cell = innerDiv.children[i] as HTMLElement;
         cell.style.display = '';
-        cell.style.transform = `translateX(${columns.getX(col)}px)`;
+        cell.style.transform = `translateX(${isFrozenCol ? columns.getX(col) + scrollX : columns.getX(col)}px)`;
+        cell.style.zIndex = isFrozenCol ? '3' : '';
         cell.style.width = `${columns.getWidth(col)}px`;
         cell.style.height = `${theme.headerHeight}px`;
         cell.textContent = this.ctx.columns.getConfig(col)?.label ?? CM.columnLabel(col);
         const hAlign = this.ctx.columns.getConfig(col)?.align;
         cell.style.justifyContent =
           hAlign === 'left' ? 'flex-start' : hAlign === 'right' ? 'flex-end' : 'center';
+        cell.classList.toggle('wt-col-header-cell--frozen-edge', frozenCols > 0 && col === frozenCols - 1);
         cell.dataset.col = String(col);
       }
 

@@ -33,6 +33,14 @@
   border-bottom: 1px solid var(--wt-grid-line, #e2e8f0);
 }
 
+/* Freeze line — crisp divider on the last frozen column so the pinned region
+   reads as separate from the scrolling content. !important so it survives any
+   preset that strips cell borders (e.g. 'standard'). */
+.wt-cell.wt-cell--frozen-edge,
+.wt-header-cell.wt-col-header-cell--frozen-edge {
+  border-right: 1px solid var(--wt-grid-line, #e2e8f0) !important;
+}
+
 /* ── Presets ── */
 
 /* 'standard': clean modern table — no vertical grid lines, horizontal row
@@ -43,12 +51,14 @@
 .wt-root--preset-standard .wt-cell {
   border-right: none;
   border-bottom: 1px solid var(--wt-row-line, #eef2f7);
-  background: transparent;
+  /* Opaque (not transparent) so frozen columns mask the content scrolling
+     underneath them. On a white card this reads the same as transparent. */
+  background: var(--wt-cell-bg, #ffffff);
 }
 .wt-root--preset-standard .wt-header-cell,
 .wt-root--preset-standard .wt-col-header-group {
   border-right: none;
-  background: transparent;
+  background: var(--wt-header-bg, #ffffff);
   color: var(--wt-header-text, #64748b);
   font-weight: 600;
 }
