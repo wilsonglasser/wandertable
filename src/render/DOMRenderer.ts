@@ -727,6 +727,9 @@ export class DOMRenderer {
         for (let c = 0; c < frozenCols; c++) fw += columns.getWidth(c);
         layer.style.width = `${fw}px`;
         layer.style.height = `${headerH}px`;
+        // The inner header div is in-flow (relative) and fills the header height,
+        // so the sticky layer would land below it; pull it back up to overlap.
+        layer.style.marginTop = `-${headerH}px`;
         while (layer.children.length < frozenCols) {
           const cell = document.createElement('div');
           cell.className = 'wt-header-cell wt-col-header-cell';
