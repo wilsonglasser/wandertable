@@ -33,6 +33,47 @@
   border-bottom: 1px solid var(--wt-grid-line, #e2e8f0);
 }
 
+/* ── Presets ── */
+
+/* 'standard': clean modern table — no vertical grid lines, horizontal row
+   separators only, transparent header. Matches a modern app data table. */
+.wt-root--preset-standard {
+  border: none;
+}
+.wt-root--preset-standard .wt-cell {
+  border-right: none;
+  border-bottom: 1px solid var(--wt-row-line, #eef2f7);
+  background: transparent;
+}
+.wt-root--preset-standard .wt-header-cell,
+.wt-root--preset-standard .wt-col-header-group {
+  border-right: none;
+  background: transparent;
+  color: var(--wt-header-text, #64748b);
+  font-weight: 600;
+}
+.wt-root--preset-standard .wt-corner {
+  border-right: none;
+  background: transparent;
+}
+
+/* 'invisible': chromeless — everything transparent. Borders/grid lines are
+   kept but transparent, so layout/metrics are unchanged. */
+.wt-root--preset-invisible {
+  border-color: transparent;
+  background: transparent;
+}
+.wt-root--preset-invisible .wt-cell {
+  border-color: transparent;
+  background: transparent;
+}
+.wt-root--preset-invisible .wt-header-cell,
+.wt-root--preset-invisible .wt-col-header-group,
+.wt-root--preset-invisible .wt-corner {
+  border-color: transparent;
+  background: transparent;
+}
+
 /* ── Auto layout (no internal scroll, grows with content) ── */
 
 .wt-root--auto {

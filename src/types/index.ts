@@ -284,6 +284,15 @@ export interface WanderTableOptions {
   showGridLines?: boolean;
   /** Show border around the grid. Default: true */
   showBorder?: boolean;
+  /**
+   * Visual preset applied as a root class.
+   * - 'spreadsheet' (default): full grid lines, filled header — classic look.
+   * - 'standard': clean table — no vertical grid lines, horizontal row
+   *   separators only, transparent header. Matches a modern app data table.
+   * - 'invisible': chromeless — transparent background, borders and grid lines
+   *   present but transparent. For embedding a grid with no visible table.
+   */
+  preset?: 'spreadsheet' | 'standard' | 'invisible';
   /** Auto-expand grid when navigating/editing beyond current bounds. Default: false */
   infinite?: boolean;
   /**

@@ -25,6 +25,7 @@ interface RendererContext {
   autoRowHeight: boolean;
   showGridLines: boolean;
   showBorder: boolean;
+  preset?: string;
   layout: 'scroll' | 'auto';
   headerRows?: import('../columns/GroupedHeaders.js').HeaderCell[][];
 }
@@ -112,6 +113,8 @@ export class DOMRenderer {
     this.ctx = ctx;
     this.container.classList.toggle('wt-root--no-gridlines', !ctx.showGridLines);
     this.container.classList.toggle('wt-root--no-border', !ctx.showBorder);
+    this.container.classList.toggle('wt-root--preset-standard', ctx.preset === 'standard');
+    this.container.classList.toggle('wt-root--preset-invisible', ctx.preset === 'invisible');
     if (ctx.layout === 'auto') {
       this.container.classList.add('wt-root--auto');
       this.scrollContainer.classList.add('wt-scroll-container--auto');
@@ -477,6 +480,17 @@ export class DOMRenderer {
         if (state.focused) cellEl.classList.add('wt-cell--focused');
       }
 
+      // Column alignment → flex justify (cells are flex containers, so
+      // text-align alone does not move a single content node). Lets
+      // `column.align` actually position content; per-cell style.textAlign
+      // (set above) still wins for text.
+      const colAlign = this.ctx.columns.getConfig(col)?.align;
+      cellEl.style.justifyContent =
+        colAlign === 'center' ? 'center' : colAlign === 'right' ? 'flex-end' : '';
+      if (colAlign && !cellData?.style?.textAlign) {
+        cellEl.style.textAlign = colAlign;
+      }
+
       // Render content
       const type = cellData?.type ?? this.ctx.columns.getConfig(col)?.type ?? this.ctx.defaultCellType;
       const renderer = this.ctx.renderers.get(type) ?? this.ctx.defaultRenderer;
@@ -547,6 +561,9 @@ export class DOMRenderer {
         cell.style.width = `${columns.getWidth(col)}px`;
         cell.style.height = `${theme.headerHeight}px`;
         cell.textContent = this.ctx.columns.getConfig(col)?.label ?? CM.columnLabel(col);
+        const hAlign = this.ctx.columns.getConfig(col)?.align;
+        cell.style.justifyContent =
+          hAlign === 'left' ? 'flex-start' : hAlign === 'right' ? 'flex-end' : 'center';
         cell.dataset.col = String(col);
       }
 

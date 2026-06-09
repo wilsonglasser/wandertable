@@ -185,6 +185,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
       autoRowHeight: options.autoRowHeight ?? false,
       showGridLines: options.showGridLines ?? true,
       showBorder: options.showBorder ?? true,
+      preset: options.preset,
       layout: options.layout ?? 'scroll',
       headerRows: this.headerRows.length > 0 ? this.headerRows : undefined,
     });
