@@ -6,6 +6,14 @@ import type { SelectionModel } from '../core/SelectionModel.js';
 import type { ViewMapping } from '../core/ViewMapping.js';
 import type { MergeModel } from '../core/MergeModel.js';
 import { ColumnModel as CM } from '../columns/ColumnModel.js';
+import { computeAutoRowHeight } from './autoRowHeight.js';
+
+/**
+ * Extra height added to the horizontal-scroll container in auto layout with
+ * frozen columns, so the horizontal scrollbar at its bottom edge doesn't clip
+ * the last row's bottom pixels. Just trailing whitespace when no scrollbar.
+ */
+const AUTO_SCROLLBAR_PAD = 16;
 
 interface RendererContext {
   data: DataModel;
@@ -220,12 +228,11 @@ export class DOMRenderer {
     const headerW = showRowHeaders ? theme.rowHeaderWidth! : 0;
 
     if (this.ctx.layout === 'auto') {
-      // Auto layout: CSS grid, content determines size
+      // Auto layout: CSS grid, content determines size. Shared chrome setup; the
+      // body/scroll wiring then forks on whether there are frozen columns.
+      const frozenCols = this.ctx.frozenCols;
       this.container.style.display = 'grid';
-      this.container.style.gridTemplateColumns = `${headerW}px ${totalW}px`;
       this.container.style.gridTemplateRows = `${headerH}px auto`;
-      this.container.style.width = `${headerW + totalW}px`;
-      this.container.style.minWidth = '100%';
 
       this.cornerEl.style.display = (showColHeaders && showRowHeaders) ? '' : 'none';
       this.cornerEl.style.position = 'static';
@@ -237,36 +244,93 @@ export class DOMRenderer {
       this.colHeaderEl.style.left = '';
       this.colHeaderEl.style.right = '';
       this.colHeaderEl.style.height = `${headerH}px`;
-      this.colHeaderEl.style.overflow = 'visible';
 
       this.rowHeaderEl.style.display = showRowHeaders ? '' : 'none';
       this.rowHeaderEl.style.position = 'static';
       this.rowHeaderEl.style.top = '';
       this.rowHeaderEl.style.bottom = '';
       this.rowHeaderEl.style.width = `${headerW}px`;
-      this.rowHeaderEl.style.overflow = 'visible';
-
-      this.scrollContainer.style.position = 'static';
-      this.scrollContainer.style.top = '';
-      this.scrollContainer.style.left = '';
-      this.scrollContainer.style.right = '';
-      this.scrollContainer.style.bottom = '';
-      this.scrollContainer.style.overflow = 'visible';
-      this.scrollContainer.style.gridColumn = showRowHeaders ? '2' : '1 / -1';
 
       this.scrollSentinel.style.width = `${totalW}px`;
       this.scrollSentinel.style.height = '0';
 
-      this.viewportEl.style.position = 'relative';
-      this.viewportEl.style.height = `${totalH}px`;
-      this.viewportEl.style.width = `${totalW}px`;
+      if (frozenCols > 0) {
+        // Frozen + auto: the grid fills its parent width and the body column is
+        // constrained with minmax(0, 1fr) — NOT `${totalW}px` or `1fr` — so the
+        // answer columns scroll HORIZONTALLY inside the grid while the frozen
+        // layer pins sticky-left. The PAGE owns vertical scroll: the scroll
+        // container is exactly content-tall (plus a scrollbar pad) with
+        // overflow-y:hidden, so it never shows an inner vertical scrollbar, and
+        // its overflow-x:auto establishes the containing block the frozen
+        // position:sticky layer needs.
+        this.container.style.gridTemplateColumns = `${headerW}px minmax(0, 1fr)`;
+        this.container.style.width = '100%';
+        this.container.style.minWidth = '';
 
-      if (showRowHeaders) {
-        const innerDiv = this.rowHeaderEl.querySelector('.wt-row-headers-inner') as HTMLElement;
-        if (innerDiv) innerDiv.style.height = `${totalH}px`;
+        // Header clips + syncs horizontally (programmatic scrollLeft needs a
+        // non-visible overflow; the frozen header layer sticks within it).
+        this.colHeaderEl.style.overflow = 'hidden';
+        this.colHeaderEl.style.gridRow = '1';
+        this.colHeaderEl.style.gridColumn = showRowHeaders ? '2' : '1 / -1';
+
+        // Row headers don't scroll internally (page owns vertical scroll).
+        this.rowHeaderEl.style.overflow = 'visible';
         this.rowHeaderEl.style.height = `${totalH}px`;
         this.rowHeaderEl.style.gridRow = '2';
         this.rowHeaderEl.style.gridColumn = '1';
+
+        this.scrollContainer.style.position = 'relative';
+        this.scrollContainer.style.top = '';
+        this.scrollContainer.style.left = '';
+        this.scrollContainer.style.right = '';
+        this.scrollContainer.style.bottom = '';
+        this.scrollContainer.style.overflowX = 'auto';
+        this.scrollContainer.style.overflowY = 'hidden';
+        this.scrollContainer.style.height = `${totalH + AUTO_SCROLLBAR_PAD}px`;
+        this.scrollContainer.style.gridRow = '2';
+        this.scrollContainer.style.gridColumn = showRowHeaders ? '2' : '1 / -1';
+
+        // Viewport absolute so the in-flow sticky frozen layer is the sole
+        // in-flow child and pins at the top of the scrollport.
+        this.viewportEl.style.position = 'absolute';
+        this.viewportEl.style.height = `${totalH}px`;
+        this.viewportEl.style.width = `${totalW}px`;
+
+        if (showRowHeaders) {
+          const innerDiv = this.rowHeaderEl.querySelector('.wt-row-headers-inner') as HTMLElement | null;
+          if (innerDiv) innerDiv.style.height = `${totalH}px`;
+        }
+      } else {
+        // Auto, no frozen columns: content determines size in both axes, the page
+        // scrolls both directions, the grid grows to its full content width.
+        this.container.style.gridTemplateColumns = `${headerW}px ${totalW}px`;
+        this.container.style.width = `${headerW + totalW}px`;
+        this.container.style.minWidth = '100%';
+
+        this.colHeaderEl.style.overflow = 'visible';
+
+        this.rowHeaderEl.style.overflow = 'visible';
+
+        this.scrollContainer.style.position = 'static';
+        this.scrollContainer.style.top = '';
+        this.scrollContainer.style.left = '';
+        this.scrollContainer.style.right = '';
+        this.scrollContainer.style.bottom = '';
+        this.scrollContainer.style.overflow = 'visible';
+        this.scrollContainer.style.height = '';
+        this.scrollContainer.style.gridColumn = showRowHeaders ? '2' : '1 / -1';
+
+        this.viewportEl.style.position = 'relative';
+        this.viewportEl.style.height = `${totalH}px`;
+        this.viewportEl.style.width = `${totalW}px`;
+
+        if (showRowHeaders) {
+          const innerDiv = this.rowHeaderEl.querySelector('.wt-row-headers-inner') as HTMLElement;
+          if (innerDiv) innerDiv.style.height = `${totalH}px`;
+          this.rowHeaderEl.style.height = `${totalH}px`;
+          this.rowHeaderEl.style.gridRow = '2';
+          this.rowHeaderEl.style.gridColumn = '1';
+        }
       }
     } else {
       // Scroll layout: absolute positioning (original)
@@ -383,29 +447,38 @@ export class DOMRenderer {
     // the tallest cell across BOTH pools wins, and the measured height is then
     // applied to both so the frozen columns stay aligned with the body.
     if (this.ctx.autoRowHeight) {
+      // Switch every auto-row cell to top-alignment for the whole read pass via a
+      // single class on the root (one style write → reads collapse into one
+      // reflow, instead of thrashing one reflow per cell). Restored right after so
+      // the cells display centered. Top-alignment is required for an accurate
+      // scrollHeight: centered wrapped content overflows above the top edge and
+      // gets clipped, under-measuring the row.
+      this.container.classList.add('wt-measuring');
       let layoutChanged = false;
       for (const r of visibleSet) {
+        const heights: number[] = [];
         const mainPooled = this.activeRows.get(r);
-        const frozenPooled = this.activeFrozenRows.get(r);
-        let maxH = 20; // minimum
         if (mainPooled) {
           for (const cellEl of mainPooled.cells) {
             if (cellEl.style.display === 'none') continue;
-            if (cellEl.scrollHeight > maxH) maxH = cellEl.scrollHeight;
+            heights.push(cellEl.scrollHeight);
           }
         }
+        const frozenPooled = this.activeFrozenRows.get(r);
         if (frozenPooled) {
           for (const cellEl of frozenPooled.cells) {
             if (cellEl.style.display === 'none') continue;
-            if (cellEl.scrollHeight > maxH) maxH = cellEl.scrollHeight;
+            heights.push(cellEl.scrollHeight);
           }
         }
+        const maxH = computeAutoRowHeight(heights, 20);
         const currentH = rows.getHeight(r);
         if (Math.abs(maxH - currentH) > 1) {
           rows.setHeight(r, maxH);
           layoutChanged = true;
         }
       }
+      this.container.classList.remove('wt-measuring');
       if (layoutChanged) {
         // Re-position rows with updated heights (without recursing). The frozen
         // layer's own height also needs to grow so the freeze line spans the new

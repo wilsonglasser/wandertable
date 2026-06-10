@@ -44,13 +44,22 @@
 }
 
 /* Auto row height — let cell content wrap and grow the row to fit the tallest
-   cell. Top-align so taller wrapped content overflows downward only, which is
-   what scrollHeight measures (centering would clip the upward overflow and the
-   measured height would come out short). */
+   cell. Display stays vertically centered (inherited from the base .wt-cell
+   align-items:center) so short sibling cells sit in the middle of a row that
+   grew tall because a neighbor wrapped. */
 .wt-root--auto-row .wt-cell {
   white-space: normal;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+/* Measurement phase only: while the renderer is reading each cell's natural
+   content height it adds .wt-measuring to the root and forces top alignment.
+   Centering would push wrapped content above the top edge where it gets clipped
+   and under-measured; top-aligning makes scrollHeight report the full content
+   height. The class is removed immediately after the read pass, so this never
+   affects what the user sees. */
+.wt-root--auto-row.wt-measuring .wt-cell {
   align-items: flex-start;
 }
 
