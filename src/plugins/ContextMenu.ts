@@ -35,6 +35,61 @@ export interface MenuItemConfig {
   action?: (ctx: MenuContext) => void;
 }
 
+/** A resolved, renderable menu entry: either a separator or a concrete item. */
+export type ResolvedMenuEntry =
+  | { type: 'separator' }
+  | { type: 'item'; item: MenuItemConfig };
+
+/**
+ * Resolve the raw menu config into the list of entries that should actually be
+ * rendered for the given context. Items hidden by `visible` are dropped, and
+ * items that evaluate to `disabled` are OMITTED entirely (not shown greyed-out).
+ * Any separators left dangling by the removals — leading, trailing, or
+ * consecutive — are collapsed so the menu never shows empty dividers.
+ *
+ * Pure (no DOM) so it can be unit-tested without a browser environment.
+ */
+export function resolveMenuEntries(items: MenuItemConfig[], ctx: MenuContext): ResolvedMenuEntry[] {
+  const kept: ResolvedMenuEntry[] = [];
+  for (const item of items) {
+    const visible = typeof item.visible === 'function' ? item.visible(ctx) : (item.visible ?? true);
+    if (!visible) {
+      continue;
+    }
+    if (item.separator) {
+      kept.push({ type: 'separator' });
+      continue;
+    }
+    const disabled = typeof item.disabled === 'function' ? item.disabled(ctx) : (item.disabled ?? false);
+    if (disabled) {
+      continue;
+    }
+    kept.push({ type: 'item', item });
+  }
+
+  // Collapse separators: drop leading/consecutive...
+  const collapsed: ResolvedMenuEntry[] = [];
+  let lastWasSeparator = true; // seeded true so a leading separator is dropped
+  for (const entry of kept) {
+    if (entry.type === 'separator') {
+      if (lastWasSeparator) {
+        continue;
+      }
+      lastWasSeparator = true;
+      collapsed.push(entry);
+    } else {
+      lastWasSeparator = false;
+      collapsed.push(entry);
+    }
+  }
+  // ...and a trailing separator.
+  while (collapsed.length > 0 && collapsed[collapsed.length - 1].type === 'separator') {
+    collapsed.pop();
+  }
+
+  return collapsed;
+}
+
 export class ContextMenu {
   private el: HTMLElement | null = null;
   private closeHandler = (e: MouseEvent) => {
@@ -52,28 +107,19 @@ export class ContextMenu {
     this.el = document.createElement('div');
     this.el.className = 'wt-context-menu';
 
-    for (const item of items) {
-      // Evaluate visibility
-      const visible = typeof item.visible === 'function'
-        ? item.visible(ctx)
-        : (item.visible ?? true);
-      if (!visible) continue;
-
-      if (item.separator) {
+    // Disabled items are omitted entirely (see resolveMenuEntries), so every
+    // item we render here is actionable.
+    for (const entry of resolveMenuEntries(items, ctx)) {
+      if (entry.type === 'separator') {
         const sep = document.createElement('div');
         sep.className = 'wt-context-menu-separator';
         this.el.appendChild(sep);
         continue;
       }
 
-      // Evaluate disabled
-      const disabled = typeof item.disabled === 'function'
-        ? item.disabled(ctx)
-        : (item.disabled ?? false);
-
+      const item = entry.item;
       const row = document.createElement('div');
       row.className = 'wt-context-menu-item';
-      if (disabled) row.classList.add('wt-context-menu-item--disabled');
 
       const label = document.createElement('span');
       label.textContent = item.label;
@@ -86,7 +132,7 @@ export class ContextMenu {
         row.appendChild(shortcut);
       }
 
-      if (!disabled && item.action) {
+      if (item.action) {
         const action = item.action;
         row.addEventListener('click', (e) => {
           e.stopPropagation();

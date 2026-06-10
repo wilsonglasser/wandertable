@@ -67,9 +67,12 @@ describe('ViewMapping', () => {
     const vm = new ViewMapping(dm);
     vm.sort(0, 'asc');
     expect(vm.toDataRow(0)).toBe(1);
+    // Sort state drives the header sort indicator arrow.
+    expect(vm.getSortState()).toEqual({ col: 0, direction: 'asc', compareFn: undefined });
 
     vm.clearSort();
     expect(vm.toDataRow(0)).toBe(0);
+    expect(vm.getSortState()).toBeNull();
   });
 
   it('should combine sort and filter', () => {

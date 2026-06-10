@@ -43,6 +43,17 @@
   padding: 6px 8px;
 }
 
+/* Auto row height — let cell content wrap and grow the row to fit the tallest
+   cell. Top-align so taller wrapped content overflows downward only, which is
+   what scrollHeight measures (centering would clip the upward overflow and the
+   measured height would come out short). */
+.wt-root--auto-row .wt-cell {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  align-items: flex-start;
+}
+
 /* Frozen columns live in CSS position:sticky layers — pinned horizontally by
    the compositor (smooth, no per-frame JS), scrolling vertically with the
    viewport. The border-right is the freeze line. */
@@ -245,6 +256,15 @@
 .wt-col-header-cell {
   top: 0;
   cursor: pointer;
+}
+
+/* Sort indicator arrow shown in the sorted column's header. Subtle, inherits
+   the header text color at reduced weight/opacity. */
+.wt-sort-indicator {
+  margin-left: 4px;
+  font-size: 0.85em;
+  opacity: 0.65;
+  flex-shrink: 0;
 }
 
 /* Resize handle zone on right edge of column header */

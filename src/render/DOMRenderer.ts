@@ -139,6 +139,7 @@ export class DOMRenderer {
     this.container.classList.toggle('wt-root--preset-standard', ctx.preset === 'standard');
     this.container.classList.toggle('wt-root--preset-invisible', ctx.preset === 'invisible');
     this.container.classList.toggle('wt-root--auto-header', ctx.autoHeaderHeight);
+    this.container.classList.toggle('wt-root--auto-row', ctx.autoRowHeight);
     if (ctx.layout === 'auto') {
       this.container.classList.add('wt-root--auto');
       this.scrollContainer.classList.add('wt-scroll-container--auto');
@@ -377,17 +378,27 @@ export class DOMRenderer {
     // Frozen columns in their own sticky layer.
     this.renderFrozenColumns(visibleSet, scrollY, frozenRows);
 
-    // Auto row height: measure actual cell content and adjust
+    // Auto row height: measure actual cell content and adjust. Both the main
+    // (scrolling) row and the frozen sticky row contribute to the row height —
+    // the tallest cell across BOTH pools wins, and the measured height is then
+    // applied to both so the frozen columns stay aligned with the body.
     if (this.ctx.autoRowHeight) {
       let layoutChanged = false;
       for (const r of visibleSet) {
-        const pooled = this.activeRows.get(r);
-        if (!pooled) continue;
+        const mainPooled = this.activeRows.get(r);
+        const frozenPooled = this.activeFrozenRows.get(r);
         let maxH = 20; // minimum
-        for (const cellEl of pooled.cells) {
-          if (cellEl.style.display === 'none') continue;
-          const natural = cellEl.scrollHeight;
-          if (natural > maxH) maxH = natural;
+        if (mainPooled) {
+          for (const cellEl of mainPooled.cells) {
+            if (cellEl.style.display === 'none') continue;
+            if (cellEl.scrollHeight > maxH) maxH = cellEl.scrollHeight;
+          }
+        }
+        if (frozenPooled) {
+          for (const cellEl of frozenPooled.cells) {
+            if (cellEl.style.display === 'none') continue;
+            if (cellEl.scrollHeight > maxH) maxH = cellEl.scrollHeight;
+          }
         }
         const currentH = rows.getHeight(r);
         if (Math.abs(maxH - currentH) > 1) {
@@ -396,19 +407,31 @@ export class DOMRenderer {
         }
       }
       if (layoutChanged) {
-        // Re-position rows with updated heights (without recursing)
+        // Re-position rows with updated heights (without recursing). The frozen
+        // layer's own height also needs to grow so the freeze line spans the new
+        // total height.
         this.updateLayout();
+        const visibleRows = viewMapping.visibleRowCount;
+        const newTotalH = visibleRows === rows.count ? rows.getTotalHeight() : rows.getY(visibleRows);
+        if (frozenCols > 0) this.frozenLayer.style.height = `${newTotalH}px`;
         for (const r of visibleSet) {
-          const pooled = this.activeRows.get(r);
-          if (!pooled) continue;
           const isFr = r < frozenRows;
           const newY = isFr ? rows.getY(r) + scrollY : rows.getY(r);
           const newH = rows.getHeight(r);
-          pooled.el.style.transform = `translateY(${newY}px)`;
-          pooled.el.style.height = `${newH}px`;
-          for (const cellEl of pooled.cells) {
-            if (cellEl.style.display !== 'none') {
-              cellEl.style.height = `${newH}px`;
+          const mainPooled = this.activeRows.get(r);
+          if (mainPooled) {
+            mainPooled.el.style.transform = `translateY(${newY}px)`;
+            mainPooled.el.style.height = `${newH}px`;
+            for (const cellEl of mainPooled.cells) {
+              if (cellEl.style.display !== 'none') cellEl.style.height = `${newH}px`;
+            }
+          }
+          const frozenPooled = this.activeFrozenRows.get(r);
+          if (frozenPooled) {
+            frozenPooled.el.style.transform = `translateY(${newY}px)`;
+            frozenPooled.el.style.height = `${newH}px`;
+            for (const cellEl of frozenPooled.cells) {
+              if (cellEl.style.display !== 'none') cellEl.style.height = `${newH}px`;
             }
           }
         }
@@ -754,6 +777,15 @@ export class DOMRenderer {
     cell.style.width = `${columns.getWidth(col)}px`;
     cell.style.height = `${headerH}px`;
     cell.textContent = columns.getConfig(col)?.label ?? CM.columnLabel(col);
+    // Sort indicator: show a subtle arrow on the column that currently drives the
+    // order. Setting textContent above already cleared it from every other column.
+    const sort = this.ctx.viewMapping.getSortState();
+    if (sort && sort.col === col && sort.direction) {
+      const ind = document.createElement('span');
+      ind.className = 'wt-sort-indicator';
+      ind.textContent = sort.direction === 'desc' ? '▼' : '▲';
+      cell.appendChild(ind);
+    }
     const hAlign = columns.getConfig(col)?.align;
     cell.style.justifyContent = hAlign === 'left' ? 'flex-start' : hAlign === 'right' ? 'flex-end' : 'center';
     cell.style.textAlign = hAlign === 'left' ? 'left' : hAlign === 'right' ? 'right' : 'center';

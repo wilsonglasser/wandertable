@@ -26,7 +26,7 @@ export { ProgressRenderer } from './renderers/ProgressRenderer.js';
 export { DropdownEditor } from './editors/DropdownEditor.js';
 export { BlankRenderer } from './renderers/BlankRenderer.js';
 export { BlankEditor } from './editors/BlankEditor.js';
-export { ContextMenu } from './plugins/ContextMenu.js';
+export { ContextMenu, resolveMenuEntries } from './plugins/ContextMenu.js';
 export { exportCSV, exportJSON, downloadFile } from './plugins/Export.js';
 export { THEME_LIGHT, THEME_DARK, THEME_MINIMAL } from './themes.js';
 
