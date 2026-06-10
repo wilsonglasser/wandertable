@@ -33,11 +33,13 @@
   border-bottom: 1px solid var(--wt-grid-line, #e2e8f0);
 }
 
-/* Auto header height — let multi-line header labels wrap and top-align instead
-   of clipping at the fixed headerHeight. Horizontal alignment stays driven by
-   the per-column inline justify-content / text-align. */
+/* Auto header height — let multi-line header labels wrap instead of clipping at
+   the fixed headerHeight. Vertical alignment stays centered (inherited from the
+   base .wt-header-cell) so a 1-line label sits in the middle of a header grown
+   tall by a 3-line neighbor; the height is measured with a height:auto probe, so
+   centering here doesn't affect measurement. Horizontal alignment stays driven
+   by the per-column inline justify-content / text-align. */
 .wt-root--auto-header .wt-header-cell {
-  align-items: flex-start;
   white-space: normal;
   line-height: 1.2;
   padding: 6px 8px;
