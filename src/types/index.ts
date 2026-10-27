@@ -193,7 +193,48 @@ export interface CommandChangeEvent {
   newValue: unknown;
 }
 
+// ── Intents ──
+
+/**
+ * A user action that would change data. With an external `source` the grid
+ * never mutates: it emits the intent and the host applies it (and owns undo).
+ * Without one, the grid applies it to its DataModel through the CommandBus.
+ */
+export type GridIntent =
+  | { type: 'edit'; row: number; col: number; value: unknown; previous: unknown }
+  | {
+      type: 'paste';
+      /** Top-left cell of the paste. */
+      anchor: CellAddress;
+      /** Parsed text/plain (TSV) of the clipboard. */
+      values: string[][];
+      /** text/html of the clipboard when available (host-specific payloads). */
+      html: string | null;
+      /** Plain-text writes resolved by the grid (a single value fills the selection). */
+      cells: { row: number; col: number; value: string }[];
+    }
+  | { type: 'clear'; ranges: SelectionRange[]; cut: boolean }
+  | {
+      type: 'fill';
+      source: SelectionRange;
+      target: SelectionRange;
+      direction: 'up' | 'down' | 'left' | 'right' | 'diagonal';
+      patches: CellPatch[];
+    }
+  | { type: 'insertRows'; at: number; count: number }
+  | { type: 'insertColumns'; at: number; count: number }
+  | { type: 'undo' }
+  | { type: 'redo' };
+
+/** Undo availability when the host owns history (external source). */
+export interface HistoryState {
+  canUndo(): boolean;
+  canRedo(): boolean;
+}
+
 export interface WanderTableEvents {
+  /** A user action that changes data; see GridIntent. */
+  'intent': GridIntent;
   'cell:change': { row: number; col: number; oldValue: unknown; newValue: unknown };
   'cell:click': { row: number; col: number; event: MouseEvent };
   'cell:dblclick': { row: number; col: number; event: MouseEvent };
@@ -201,6 +242,8 @@ export interface WanderTableEvents {
   'selection:change': { ranges: SelectionRange[] };
   'editor:open': { row: number; col: number };
   'editor:close': { row: number; col: number; value: unknown; cancelled: boolean };
+  /** The editor's validate() refused the value; the editor stays open. */
+  'editor:invalid': { row: number; col: number; value: unknown; message: string | null };
   'scroll': { viewport: Viewport };
   'column:resize': { col: number; width: number };
   'row:resize': { row: number; height: number };
@@ -263,6 +306,12 @@ export interface WanderTableOptions {
    * included) and the host calls invalidate()/setSize() after changing it.
    */
   source?: CellSource;
+  /** Host text/html for copied ranges (e.g. its own field payload); null = default table. */
+  clipboardHtml?: (range: SelectionRange) => string | null;
+  /** Called for every GridIntent (same as the 'intent' event). */
+  onIntent?: (intent: GridIntent) => void;
+  /** External source mode: undo/redo availability for the context menu. */
+  history?: HistoryState;
   /** Accessible name per cell (aria-label), e.g. reference + field name. */
   cellLabel?: (row: number, col: number, data: CellData | undefined) => string | null | undefined;
   colCount?: number;

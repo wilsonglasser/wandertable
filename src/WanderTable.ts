@@ -10,6 +10,7 @@ import type {
   WanderTableEvents,
   WanderTableOptions,
   CellSource,
+  GridIntent,
 } from './types/index.js';
 import { DEFAULT_THEME } from './types/index.js';
 import { DataModel } from './core/DataModel.js';
@@ -23,6 +24,7 @@ import { AutoFit } from './render/AutoFit.js';
 import { RendererRegistry } from './renderers/RendererRegistry.js';
 import { EditorManager } from './editors/EditorManager.js';
 import { KeyboardNav } from './interaction/KeyboardNav.js';
+import { parseTSV } from './interaction/tsv.js';
 import { ClipboardManager } from './interaction/ClipboardManager.js';
 import { ColumnResize } from './interaction/ColumnResize.js';
 import { RowResize } from './interaction/RowResize.js';
@@ -144,7 +146,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
     this.contextMenu = new ContextMenu();
 
     // Clipboard
-    this.clipboard = new ClipboardManager(this.data, this.selection, this.source);
+    this.clipboard = new ClipboardManager(this.source, this.selection, options.clipboardHtml ?? null);
 
     // Fill handle (inside viewport so position: absolute works correctly)
     this.fillHandle = new FillHandle(
@@ -161,12 +163,14 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
         if (this.options.allowEditing !== false) this.startEditing(row, col, initialChar);
       },
       onDelete: () => this.deleteSelected(),
-      onCopy: () => { if (this.options.allowClipboard !== false) this.clipboard.copy(); },
-      onPaste: () => { if (this.options.allowClipboard !== false) this.pasteWithUndo(); },
-      onCut: () => { if (this.options.allowClipboard !== false) this.cutWithUndo(); },
-      onUndo: () => { if (this.options.allowUndoRedo !== false) this.undo(); },
-      onRedo: () => { if (this.options.allowUndoRedo !== false) this.redo(); },
+      onUndo: () => { if (this.options.allowUndoRedo !== false) this.commit({ type: 'undo' }); },
+      onRedo: () => { if (this.options.allowUndoRedo !== false) this.commit({ type: 'redo' }); },
       onScrollTo: (row, col) => this.renderer.scrollToCell(row, col),
+      pageRows: () => {
+        const vp = this.renderer.getViewport();
+        return Math.max(1, vp.endRow - vp.startRow - 6);
+      },
+      jumpTarget: (from, dRow, dCol) => this.dataEdge(from, dRow, dCol),
     });
 
     // Wire up callbacks
@@ -231,11 +235,9 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
     };
     this.fillHandle.enabled = options.allowFillHandle !== false;
     this.fillHandle.onFillCallback = options.onFill ?? null;
-    this.fillHandle.onFill = (patches, _source, fill) => {
+    this.fillHandle.onFill = (patches, source, fill, direction) => {
       if (patches.length > 0) {
-        const cmd = new PatchCommand(this.data, patches);
-        this.execCommand(cmd);
-        this.emit('data:patch', { patches });
+        this.commit({ type: 'fill', source, target: fill, direction, patches });
       }
       // Extend selection to include filled area
       this.selection.extendTo(fill.endRow, fill.endCol);
@@ -407,14 +409,14 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
       }
 
       // Checkbox toggle on click
-      const cellData = this.data.getCell(row, col);
+      const cellData = this.source.getCell(row, col);
       const colConfig = this.columns.getConfig(col);
       const defaultType = this.options.defaultCellType ?? 'text';
       const cellType = cellData?.type ?? colConfig?.type ?? defaultType;
       if (cellType === 'checkbox' && !this.options.readOnly && this.options.allowEditing !== false
           && !colConfig?.readOnly && !cellData?.readOnly) {
         const oldValue = !!cellData?.value;
-        this.setCellValue(row, col, !oldValue);
+        this.commit({ type: 'edit', row, col, value: !oldValue, previous: cellData?.value });
         if (this.options.allowSelection !== false) this.selection.focusCell(row, col);
         this.emit('cell:click', { row, col, event: e });
         return;
@@ -526,16 +528,25 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
     // Editor close
     this.editorManager.onClose = (row, col, value, cancelled) => {
       if (!cancelled && value !== undefined) {
-        const oldValue = this.data.getCell(row, col)?.value;
-        // Use command for undo support
-        const cmd = new SetCellValueCommand(this.data, row, col, value);
-        this.execCommand(cmd);
-        this.emit('cell:change', { row, col, oldValue, newValue: value });
-        this.options.onCellChange?.(row, col, oldValue, value);
+        this.commit({ type: 'edit', row, col, value, previous: this.source.getCell(row, col)?.value });
       }
       this.emit('editor:close', { row, col, value, cancelled });
       this.renderer.getContainer().focus();
     };
+    this.editorManager.onAdvance = (dRow, dCol) => {
+      this.selection.move(dRow, dCol, false);
+      const focus = this.selection.focus;
+      if (focus) this.renderer.scrollToCell(focus.row, focus.col);
+    };
+    this.editorManager.onInvalid = (row, col, value, message) => {
+      this.emit('editor:invalid', { row, col, value, message });
+    };
+
+    // Native clipboard events: the keyboard leaves Ctrl+C/X/V to the browser.
+    const root = this.renderer.getContainer();
+    root.addEventListener('copy', this.handleCopyEvent);
+    root.addEventListener('cut', this.handleCutEvent);
+    root.addEventListener('paste', this.handlePasteEvent);
 
     // Keyboard
     this._keydownHandler = (e: KeyboardEvent) => {
@@ -554,10 +565,6 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
       this.contextMenu.open(e.clientX, e.clientY, this.contextMenuItems, ctx);
     };
 
-    // Clipboard change
-    this.clipboard.onChange = (patches) => {
-      this.emit('data:patch', { patches });
-    };
 
     // Column reorder
     this.columnReorder.getColAtX = (clientX) => {
@@ -615,18 +622,18 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
   /** Override this to customize context menu items */
   contextMenuItems: MenuItemConfig[] = [
     // ── Cell items ──
-    { label: 'Copy', shortcut: 'Ctrl+C', visible: (ctx) => ctx.target === 'cell', action: () => this.clipboard.copy() },
+    { label: 'Copy', shortcut: 'Ctrl+C', visible: (ctx) => ctx.target === 'cell', action: () => { void this.clipboard.copyAsync(); } },
     {
       label: 'Paste', shortcut: 'Ctrl+V',
       visible: (ctx) => ctx.target === 'cell',
       disabled: (ctx) => ctx.readOnly,
-      action: () => this.pasteWithUndo(),
+      action: () => { void this.pasteFromMenu(); },
     },
     {
       label: 'Cut', shortcut: 'Ctrl+X',
       visible: (ctx) => ctx.target === 'cell',
       disabled: (ctx) => ctx.readOnly,
-      action: () => this.cutWithUndo(),
+      action: () => { void this.cutFromMenu(); },
     },
     {
       label: '', separator: true,
@@ -646,25 +653,25 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
       label: 'Insert row above',
       visible: (ctx) => ctx.target === 'cell' || ctx.target === 'row-header',
       disabled: (ctx) => ctx.readOnly,
-      action: (ctx) => this.insertRow(ctx.row),
+      action: (ctx) => this.commit({ type: 'insertRows', at: ctx.row, count: 1 }),
     },
     {
       label: 'Insert row below',
       visible: (ctx) => ctx.target === 'cell' || ctx.target === 'row-header',
       disabled: (ctx) => ctx.readOnly,
-      action: (ctx) => this.insertRow(ctx.row + 1),
+      action: (ctx) => this.commit({ type: 'insertRows', at: ctx.row + 1, count: 1 }),
     },
     {
       label: 'Insert column left',
       visible: (ctx) => (ctx.target === 'cell' && !ctx.isMultiSelect) || ctx.target === 'column-header',
       disabled: (ctx) => ctx.readOnly,
-      action: (ctx) => this.insertColumn(ctx.col),
+      action: (ctx) => this.commit({ type: 'insertColumns', at: ctx.col, count: 1 }),
     },
     {
       label: 'Insert column right',
       visible: (ctx) => (ctx.target === 'cell' && !ctx.isMultiSelect) || ctx.target === 'column-header',
       disabled: (ctx) => ctx.readOnly,
-      action: (ctx) => this.insertColumn(ctx.col + 1),
+      action: (ctx) => this.commit({ type: 'insertColumns', at: ctx.col + 1, count: 1 }),
     },
 
     // ── Column header items ──
@@ -713,12 +720,12 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
     {
       label: 'Undo', shortcut: 'Ctrl+Z',
       disabled: (ctx) => !ctx.canUndo,
-      action: () => this.undo(),
+      action: () => this.commit({ type: 'undo' }),
     },
     {
       label: 'Redo', shortcut: 'Ctrl+Y',
       disabled: (ctx) => !ctx.canRedo,
-      action: () => this.redo(),
+      action: () => this.commit({ type: 'redo' }),
     },
   ];
 
@@ -736,8 +743,8 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
       isFullRow: bounds ? bounds.c1 === 0 && bounds.c2 === this.data.colCount - 1 : false,
       isFullCol: bounds ? bounds.r1 === 0 && bounds.r2 === this.data.rowCount - 1 : false,
       readOnly: !!this.options.readOnly,
-      canUndo: this.commands.canUndo,
-      canRedo: this.commands.canRedo,
+      canUndo: this.isExternal ? this.options.history?.canUndo() ?? true : this.commands.canUndo,
+      canRedo: this.isExternal ? this.options.history?.canRedo() ?? true : this.commands.canRedo,
     };
   }
 
@@ -749,6 +756,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
   // ── Public API ──
 
   setCell(row: number, col: number, data: CellData): void {
+    this.assertInternal('setCell');
     this.data.setCell(row, col, data);
   }
 
@@ -757,6 +765,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
   }
 
   setCellValue(row: number, col: number, value: unknown): void {
+    this.assertInternal('setCellValue');
     const old = this.data.getCell(row, col)?.value;
     const cmd = new SetCellValueCommand(this.data, row, col, value);
     this.execCommand(cmd);
@@ -764,10 +773,12 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
   }
 
   deleteCell(row: number, col: number): void {
+    this.assertInternal('deleteCell');
     this.data.deleteCell(row, col);
   }
 
   applyPatch(patches: CellPatch[]): void {
+    this.assertInternal('applyPatch');
     const cmd = new PatchCommand(this.data, patches);
     this.execCommand(cmd);
     this.emit('data:patch', { patches });
@@ -807,6 +818,9 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
   setSelection(ranges: SelectionRange[]): void {
     if (ranges.length > 0) {
       this.selection.focusCell(ranges[0].startRow, ranges[0].startCol);
+      if (ranges[0].endRow !== ranges[0].startRow || ranges[0].endCol !== ranges[0].startCol) {
+        this.selection.extendTo(ranges[0].endRow, ranges[0].endCol);
+      }
       for (let i = 1; i < ranges.length; i++) {
         this.selection.addRange(ranges[i]);
       }
@@ -854,6 +868,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
   }
 
   insertRow(at: number): void {
+    this.assertInternal('insertRow');
     this.data.rowCount += 1;
     this.rows.setCount(this.data.rowCount);
     this.selection.setDimensions(this.data.rowCount, this.data.colCount);
@@ -881,6 +896,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
   }
 
   insertColumn(at: number): void {
+    this.assertInternal('insertColumn');
     this.data.colCount += 1;
     this.columns.setCount(this.data.colCount);
     this.selection.setDimensions(this.data.rowCount, this.data.colCount);
@@ -1055,6 +1071,10 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
     if (this._keydownHandler) {
       this.renderer.getContainer().removeEventListener('keydown', this._keydownHandler);
     }
+    const root = this.renderer.getContainer();
+    root.removeEventListener('copy', this.handleCopyEvent);
+    root.removeEventListener('cut', this.handleCutEvent);
+    root.removeEventListener('paste', this.handlePasteEvent);
     // Remove infinite scroll handler
     if (this._infiniteScrollHandler) {
       window.removeEventListener('scroll', this._infiniteScrollHandler);
@@ -1088,7 +1108,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
     if (this.options.readOnly) return;
 
     const colConfig = this.columns.getConfig(col);
-    const cellData = this.data.getCell(row, col);
+    const cellData = this.source.getCell(row, col);
     if (colConfig?.readOnly || cellData?.readOnly) return;
 
     const defaultType = this.options.defaultCellType ?? 'text';
@@ -1109,66 +1129,174 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
     this.editorManager.open(row, col, editorType, value, bounds, cellData, initialChar);
   }
 
-  private deleteSelected(): void {
-    if (this.options.readOnly) return;
-    const cells: { row: number; col: number }[] = [];
-    this.selection.forEachSelected((row, col) => {
-      if (this.data.hasCell(row, col)) {
-        cells.push({ row, col });
-      }
-    });
-    if (cells.length > 0) {
-      const cmd = new DeleteCellsCommand(this.data, cells);
-      this.execCommand(cmd);
+  private get isExternal(): boolean {
+    return this.options.source !== undefined;
+  }
+
+  private assertInternal(method: string): void {
+    if (this.isExternal) {
+      throw new Error(`WanderTable.${method}: data is owned by options.source; change it there and call invalidate()`);
     }
   }
 
-  private async pasteWithUndo(): Promise<void> {
-    // Snapshot before paste to support undo
-    const focus = this.selection.focus;
-    if (!focus) return;
+  /**
+   * Every user action that changes data lands here. External source: emit the
+   * intent, mutate nothing. Built-in DataModel: apply it with undo support.
+   */
+  private commit(intent: GridIntent): void {
+    this.emit('intent', intent);
+    this.options.onIntent?.(intent);
+    if (!this.isExternal) this.applyIntent(intent);
+  }
 
-    let text: string;
-    try {
-      text = await navigator.clipboard.readText();
-    } catch {
-      return;
-    }
+  private isCellReadOnly(row: number, col: number): boolean {
+    return !!(this.source.getCell(row, col)?.readOnly || this.columns.getConfig(col)?.readOnly);
+  }
 
-    const rows = text.split('\n').map(line => line.split('\t'));
-    if (rows.length === 0) return;
-
-    const isSingleCell = rows.length === 1 && rows[0].length === 1;
-    const patches: CellPatch[] = [];
-
-    if (isSingleCell && !this.isFullRowOrColSelected()) {
-      const value = rows[0][0];
-      this.selection.forEachSelected((row, col) => {
-        if (row < this.data.rowCount && col < this.data.colCount) {
-          patches.push({ row, col, data: { value } });
+  private applyIntent(intent: GridIntent): void {
+    switch (intent.type) {
+      case 'edit': {
+        this.execCommand(new SetCellValueCommand(this.data, intent.row, intent.col, intent.value));
+        this.emit('cell:change', { row: intent.row, col: intent.col, oldValue: intent.previous, newValue: intent.value });
+        this.options.onCellChange?.(intent.row, intent.col, intent.previous, intent.value);
+        break;
+      }
+      case 'paste':
+      case 'fill': {
+        const patches: CellPatch[] = intent.type === 'paste'
+          ? intent.cells.map((c) => ({ row: c.row, col: c.col, data: { value: c.value } }))
+          : intent.patches;
+        const writable = patches.filter((p) => !this.isCellReadOnly(p.row, p.col));
+        if (writable.length > 0) {
+          this.execCommand(new PatchCommand(this.data, writable));
+          this.emit('data:patch', { patches: writable });
         }
+        break;
+      }
+      case 'clear': {
+        const cells: { row: number; col: number }[] = [];
+        for (const range of intent.ranges) {
+          const r1 = Math.min(range.startRow, range.endRow);
+          const r2 = Math.max(range.startRow, range.endRow);
+          const c1 = Math.min(range.startCol, range.endCol);
+          const c2 = Math.max(range.startCol, range.endCol);
+          for (let r = r1; r <= r2; r++) {
+            for (let c = c1; c <= c2; c++) {
+              if (this.data.hasCell(r, c) && !this.isCellReadOnly(r, c)) cells.push({ row: r, col: c });
+            }
+          }
+        }
+        if (cells.length > 0) this.execCommand(new DeleteCellsCommand(this.data, cells));
+        break;
+      }
+      case 'insertRows':
+        for (let i = 0; i < intent.count; i++) this.insertRow(intent.at);
+        break;
+      case 'insertColumns':
+        for (let i = 0; i < intent.count; i++) this.insertColumn(intent.at);
+        break;
+      case 'undo':
+        this.undo();
+        break;
+      case 'redo':
+        this.redo();
+        break;
+    }
+  }
+
+  private deleteSelected(): void {
+    if (this.options.readOnly || this.selection.ranges.length === 0) return;
+    this.commit({ type: 'clear', ranges: [...this.selection.ranges], cut: false });
+  }
+
+  /**
+   * Resolve clipboard text into cell writes: a single value fills the whole
+   * selection, a block lands at the focus cell. Then commit a paste intent.
+   */
+  private pasteText(text: string, html: string | null): void {
+    const focus = this.selection.focus;
+    if (!focus || this.options.readOnly) return;
+    const values = parseTSV(text);
+    if (values.length === 0 && !html) return;
+
+    const cells: { row: number; col: number; value: string }[] = [];
+    const rowCount = this.source.rowCount;
+    const colCount = this.source.colCount;
+    if (values.length === 1 && values[0].length === 1 && !this.isFullRowOrColSelected()) {
+      const value = values[0][0];
+      this.selection.forEachSelected((row, col) => {
+        if (row < rowCount && col < colCount) cells.push({ row, col, value });
       });
     } else {
-      for (let r = 0; r < rows.length; r++) {
-        for (let c = 0; c < rows[r].length; c++) {
-          const targetRow = focus.row + r;
-          const targetCol = focus.col + c;
-          if (targetRow >= this.data.rowCount || targetCol >= this.data.colCount) continue;
-          patches.push({ row: targetRow, col: targetCol, data: { value: rows[r][c] } });
+      for (let r = 0; r < values.length; r++) {
+        for (let c = 0; c < values[r].length; c++) {
+          const row = focus.row + r;
+          const col = focus.col + c;
+          if (row >= rowCount || col >= colCount) continue;
+          cells.push({ row, col, value: values[r][c] });
         }
       }
     }
-
-    if (patches.length > 0) {
-      const cmd = new PatchCommand(this.data, patches);
-      this.execCommand(cmd);
-      this.emit('data:patch', { patches });
-    }
+    this.commit({ type: 'paste', anchor: { ...focus }, values, html, cells });
   }
 
-  private async cutWithUndo(): Promise<void> {
-    await this.clipboard.copy();
-    this.deleteSelected();
+  private handleCopyEvent = (e: ClipboardEvent): void => {
+    if (this.editorManager.isEditing || this.options.allowClipboard === false) return;
+    this.clipboard.writeEvent(e);
+  };
+
+  private handleCutEvent = (e: ClipboardEvent): void => {
+    if (this.editorManager.isEditing || this.options.allowClipboard === false) return;
+    if (this.clipboard.writeEvent(e) && !this.options.readOnly) {
+      this.commit({ type: 'clear', ranges: [...this.selection.ranges], cut: true });
+    }
+  };
+
+  private handlePasteEvent = (e: ClipboardEvent): void => {
+    if (this.editorManager.isEditing || this.options.allowClipboard === false || !e.clipboardData) return;
+    e.preventDefault();
+    this.pasteText(e.clipboardData.getData('text/plain'), e.clipboardData.getData('text/html') || null);
+  };
+
+  private async pasteFromMenu(): Promise<void> {
+    const content = await this.clipboard.readAsync();
+    if (content) this.pasteText(content.text, content.html);
+  }
+
+  private async cutFromMenu(): Promise<void> {
+    if (await this.clipboard.copyAsync()) this.deleteSelected();
+  }
+
+  /**
+   * Ctrl+Arrow target, spreadsheet rule: inside a filled run go to its last
+   * filled cell; otherwise go to the next filled cell; otherwise the edge.
+   */
+  private dataEdge(from: { row: number; col: number }, dRow: number, dCol: number): { row: number; col: number } {
+    const maxRow = this.source.rowCount - 1;
+    const maxCol = this.source.colCount - 1;
+    const inside = (r: number, c: number) => r >= 0 && c >= 0 && r <= maxRow && c <= maxCol;
+    const filled = (r: number, c: number) => {
+      const v = this.source.getCell(r, c)?.value;
+      return v !== undefined && v !== null && v !== '';
+    };
+    let r = from.row;
+    let c = from.col;
+    if (!inside(r + dRow, c + dCol)) return { row: r, col: c };
+    if (filled(r, c) && filled(r + dRow, c + dCol)) {
+      while (inside(r + dRow, c + dCol) && filled(r + dRow, c + dCol)) {
+        r += dRow;
+        c += dCol;
+      }
+      return { row: r, col: c };
+    }
+    r += dRow;
+    c += dCol;
+    while (inside(r, c) && !filled(r, c)) {
+      if (!inside(r + dRow, c + dCol)) return { row: r, col: c };
+      r += dRow;
+      c += dCol;
+    }
+    return { row: r, col: c };
   }
 
   private execCommand(cmd: Command): void {

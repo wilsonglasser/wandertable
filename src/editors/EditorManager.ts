@@ -9,6 +9,10 @@ export class EditorManager {
   private overlayEl: HTMLElement;
 
   onClose: ((row: number, col: number, value: unknown, cancelled: boolean) => void) | null = null;
+  /** After Enter/Tab committed: move the selection by (dRow, dCol). */
+  onAdvance: ((dRow: number, dCol: number) => void) | null = null;
+  /** validate() refused the value; the editor stays open. */
+  onInvalid: ((row: number, col: number, value: unknown, message: string | null) => void) | null = null;
 
   constructor(container: HTMLElement) {
     this.overlayEl = document.createElement('div');
@@ -82,7 +86,11 @@ export class EditorManager {
       if (editor.validate) {
         const result = editor.validate(value);
         if (result !== true) {
-          // Validation failed
+          // Stay open and say why, instead of silently refusing to close.
+          this.activeEditorEl?.setAttribute('aria-invalid', 'true');
+          const message = typeof result === 'string' ? result : null;
+          if (message) this.activeEditorEl?.setAttribute('title', message);
+          this.onInvalid?.(row, col, value, message);
           return;
         }
       }
@@ -103,13 +111,19 @@ export class EditorManager {
     this.onClose?.(row, col, save ? value : undefined, !save);
   }
 
+  /** Save and, once closed, ask the grid to move the selection. */
+  private commitAndAdvance(dRow: number, dCol: number): void {
+    this.close(true);
+    if (!this.activeEditor) this.onAdvance?.(dRow, dCol);
+  }
+
   private handleEditorKey = (e: KeyboardEvent): void => {
     switch (e.key) {
       case 'Enter':
         if (!e.shiftKey) {
           e.preventDefault();
           e.stopPropagation();
-          this.close(true);
+          this.commitAndAdvance(1, 0);
         }
         break;
       case 'Escape':
@@ -120,7 +134,7 @@ export class EditorManager {
       case 'Tab':
         e.preventDefault();
         e.stopPropagation();
-        this.close(true);
+        this.commitAndAdvance(0, e.shiftKey ? -1 : 1);
         break;
     }
   };

@@ -171,13 +171,30 @@ export class SelectionModel {
       this.focusCell(0, 0);
       return;
     }
-    const newRow = this.clampRow(this._focus.row + dRow);
-    const newCol = this.clampCol(this._focus.col + dCol);
+    // Extending moves the selection's far corner (head), not the focus:
+    // repeated Shift+Arrow keeps growing the range.
+    const from = extend ? this.head ?? this._focus : this._focus;
+    const newRow = this.clampRow(from.row + dRow);
+    const newCol = this.clampCol(from.col + dCol);
     if (extend) {
       this.extendTo(newRow, newCol);
     } else {
       this.focusCell(newRow, newCol);
     }
+  }
+
+  /** The moving corner of the last range (the focus is the anchor corner). */
+  get head(): CellAddress | null {
+    const last = this._ranges[this._ranges.length - 1];
+    return last ? { row: last.endRow, col: last.endCol } : null;
+  }
+
+  get rowCount(): number {
+    return this._rowCount;
+  }
+
+  get colCount(): number {
+    return this._colCount;
   }
 
   private inRange(row: number, col: number, r: SelectionRange): boolean {

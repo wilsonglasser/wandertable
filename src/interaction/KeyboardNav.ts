@@ -1,16 +1,23 @@
+import type { CellAddress } from '../types/index.js';
 import type { SelectionModel } from '../core/SelectionModel.js';
 
 export interface KeyboardNavCallbacks {
   onStartEdit: (row: number, col: number, initialChar?: string) => void;
   onDelete: () => void;
-  onCopy: () => void;
-  onPaste: () => void;
-  onCut: () => void;
   onUndo: () => void;
   onRedo: () => void;
   onScrollTo: (row: number, col: number) => void;
+  /** Rows that fit in the viewport (PageUp/PageDown step). */
+  pageRows: () => number;
+  /** Ctrl+Arrow target from `from` in direction (dRow, dCol): the data edge. */
+  jumpTarget: (from: CellAddress, dRow: number, dCol: number) => CellAddress;
 }
 
+/**
+ * Spreadsheet keys. Ctrl+C / Ctrl+X / Ctrl+V are deliberately not handled:
+ * the browser then fires native copy/cut/paste events, which carry both
+ * text/plain and text/html and need no clipboard permission.
+ */
 export class KeyboardNav {
   private selection: SelectionModel;
   private callbacks: KeyboardNavCallbacks;
@@ -24,41 +31,48 @@ export class KeyboardNav {
     const ctrl = e.ctrlKey || e.metaKey;
     const shift = e.shiftKey;
     const focus = this.selection.focus;
+    // With Shift held a letter arrives upper-case ('Z'): match on lower-case.
+    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key;
 
-    switch (e.key) {
+    switch (key) {
       case 'ArrowUp':
         e.preventDefault();
-        this.selection.move(-1, 0, shift);
-        if (this.selection.focus) this.callbacks.onScrollTo(this.selection.focus.row, this.selection.focus.col);
+        this.arrow(-1, 0, ctrl, shift);
         break;
-
       case 'ArrowDown':
         e.preventDefault();
-        this.selection.move(1, 0, shift);
-        if (this.selection.focus) this.callbacks.onScrollTo(this.selection.focus.row, this.selection.focus.col);
+        this.arrow(1, 0, ctrl, shift);
         break;
-
       case 'ArrowLeft':
         e.preventDefault();
-        this.selection.move(0, -1, shift);
-        if (this.selection.focus) this.callbacks.onScrollTo(this.selection.focus.row, this.selection.focus.col);
+        this.arrow(0, -1, ctrl, shift);
         break;
-
       case 'ArrowRight':
         e.preventDefault();
-        this.selection.move(0, 1, shift);
-        if (this.selection.focus) this.callbacks.onScrollTo(this.selection.focus.row, this.selection.focus.col);
+        this.arrow(0, 1, ctrl, shift);
         break;
+
+      case 'PageDown':
+      case 'PageUp': {
+        e.preventDefault();
+        const step = Math.max(1, this.callbacks.pageRows() - 1);
+        this.selection.move(key === 'PageDown' ? step : -step, 0, shift);
+        this.scrollToActive();
+        break;
+      }
 
       case 'Tab':
         e.preventDefault();
         this.selection.move(0, shift ? -1 : 1, false);
-        if (this.selection.focus) this.callbacks.onScrollTo(this.selection.focus.row, this.selection.focus.col);
+        this.scrollToActive();
         break;
 
       case 'Enter':
         e.preventDefault();
-        if (focus) {
+        if (shift) {
+          this.selection.move(-1, 0, false);
+          this.scrollToActive();
+        } else if (focus) {
           this.callbacks.onStartEdit(focus.row, focus.col);
         }
         break;
@@ -83,50 +97,18 @@ export class KeyboardNav {
 
       case 'Home':
         e.preventDefault();
-        if (ctrl) {
-          this.selection.focusCell(0, 0);
-        } else if (focus) {
-          this.selection.focusCell(focus.row, 0);
-        }
-        if (this.selection.focus) this.callbacks.onScrollTo(this.selection.focus.row, this.selection.focus.col);
+        this.moveTo(ctrl ? 0 : focus?.row ?? 0, 0, shift);
         break;
 
       case 'End':
         e.preventDefault();
-        if (this.selection.focus) this.callbacks.onScrollTo(this.selection.focus.row, this.selection.focus.col);
+        this.moveTo(ctrl ? this.selection.rowCount - 1 : focus?.row ?? 0, this.selection.colCount - 1, shift);
         break;
 
       case 'a':
         if (ctrl) {
           e.preventDefault();
           this.selection.selectAll();
-        } else {
-          this.handleCharInput(e);
-        }
-        break;
-
-      case 'c':
-        if (ctrl) {
-          e.preventDefault();
-          this.callbacks.onCopy();
-        } else {
-          this.handleCharInput(e);
-        }
-        break;
-
-      case 'v':
-        if (ctrl) {
-          e.preventDefault();
-          this.callbacks.onPaste();
-        } else {
-          this.handleCharInput(e);
-        }
-        break;
-
-      case 'x':
-        if (ctrl) {
-          e.preventDefault();
-          this.callbacks.onCut();
         } else {
           this.handleCharInput(e);
         }
@@ -160,6 +142,32 @@ export class KeyboardNav {
         }
         break;
     }
+  }
+
+  private arrow(dRow: number, dCol: number, ctrl: boolean, shift: boolean): void {
+    if (ctrl) {
+      const from = (shift ? this.selection.head : null) ?? this.selection.focus ?? { row: 0, col: 0 };
+      const target = this.callbacks.jumpTarget(from, dRow, dCol);
+      this.moveTo(target.row, target.col, shift);
+      return;
+    }
+    this.selection.move(dRow, dCol, shift);
+    this.scrollToActive();
+  }
+
+  private moveTo(row: number, col: number, extend: boolean): void {
+    if (extend && this.selection.focus) {
+      this.selection.extendTo(row, col);
+    } else {
+      this.selection.focusCell(row, col);
+    }
+    this.scrollToActive();
+  }
+
+  /** Keep the moving corner in view (the head when extending). */
+  private scrollToActive(): void {
+    const target = this.selection.head ?? this.selection.focus;
+    if (target) this.callbacks.onScrollTo(target.row, target.col);
   }
 
   private handleCharInput(e: KeyboardEvent): void {
