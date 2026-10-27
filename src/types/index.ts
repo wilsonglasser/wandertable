@@ -324,6 +324,12 @@ export interface WanderTableOptions {
   columns?: ColumnConfig[];
   rowCount?: number;
   /**
+   * layout 'auto' only: the page scrolls vertically (no inner scrollbar), the
+   * grid renders just the rows in view of the window and keeps the column
+   * headers sticky at the top; columns scroll inside the grid.
+   */
+  virtualize?: boolean;
+  /**
    * External cell data. When set, the grid reads from it (rowCount/colCount
    * included) and the host calls invalidate()/setSize() after changing it.
    */

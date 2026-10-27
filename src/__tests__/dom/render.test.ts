@@ -302,3 +302,49 @@ describe('incremental paint', () => {
     expect(document.getElementById(active!)).toBe(cellAt(host, 4, 0));
   });
 });
+
+describe('auto layout virtualized by the page scroll', () => {
+  let host: HTMLElement;
+  let table: WanderTable;
+  let containerTop = 0;
+  const original = HTMLElement.prototype.getBoundingClientRect;
+
+  beforeEach(async () => {
+    stubLayout();
+    Object.defineProperty(window, 'innerHeight', { configurable: true, value: 400 });
+    HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
+      if (this.classList.contains('wt-scroll-container')) {
+        return { top: containerTop, left: 0, right: VIEW_W, bottom: containerTop + 5000 * ROW_H, width: VIEW_W, height: 5000 * ROW_H, x: 0, y: containerTop, toJSON() {} } as DOMRect;
+      }
+      return original.call(this);
+    };
+    containerTop = 120;
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    table = new WanderTable(host, { layout: 'auto', virtualize: true, rowCount: 5000, colCount: 5, defaultRowHeight: ROW_H });
+    for (let r = 0; r < 5000; r += 100) table.setCell(r, 0, { value: `r${r}` });
+    await frame();
+  });
+
+  afterEach(() => {
+    table.destroy();
+    host.remove();
+    HTMLElement.prototype.getBoundingClientRect = original;
+  });
+
+  it('renders only the rows inside the window, with no inner vertical scroll', () => {
+    const rows = new Set(visibleCells(host).map((el) => Number(el.dataset.row)));
+    expect(Math.max(...rows)).toBeLessThan(Math.ceil(400 / ROW_H) + 10);
+    const sc = host.querySelector<HTMLElement>('.wt-scroll-container')!;
+    expect(sc.style.overflowY).toBe('hidden');
+    expect(host.querySelector<HTMLElement>('.wt-col-headers')!.style.position).toBe('sticky');
+  });
+
+  it('follows the window scroll', async () => {
+    containerTop = -(ROW_H * 3000);
+    window.dispatchEvent(new Event('scroll'));
+    await frame();
+    expect(cellAt(host, 3000, 0)?.textContent).toBe('r3000');
+    expect(cellAt(host, 0, 0)).toBeUndefined();
+  });
+});

@@ -35,6 +35,8 @@ interface RendererContext {
   showBorder: boolean;
   preset?: string;
   layout: 'scroll' | 'auto';
+  /** layout 'auto' only: render just the rows in view of the page (window) scroll. */
+  virtualize?: boolean;
   headerRows?: import('../columns/GroupedHeaders.js').HeaderCell[][];
   /** Accessible name for a cell (aria-label); null/undefined = use its text. */
   cellLabel?: (row: number, col: number, data: CellData | undefined) => string | null | undefined;
@@ -152,6 +154,8 @@ export class DOMRenderer {
     this.container.appendChild(this.scrollContainer);
 
     this.scrollContainer.addEventListener('scroll', this.handleScroll, { passive: true });
+    window.addEventListener('scroll', this.handlePageScroll, { passive: true });
+    window.addEventListener('resize', this.handlePageScroll, { passive: true });
     this.viewportEl.addEventListener('mousedown', this.handleMouseDown);
     this.viewportEl.addEventListener('dblclick', this.handleDblClick);
     this.viewportEl.addEventListener('contextmenu', this.handleContextMenu);
@@ -280,8 +284,8 @@ export class DOMRenderer {
       this.scrollSentinel.style.width = `${totalW}px`;
       this.scrollSentinel.style.height = '0';
 
-      if (frozenCols > 0) {
-        // Frozen + auto: the grid fills its parent width and the body column is
+      if (frozenCols > 0 || this.ctx.virtualize) {
+        // Frozen (or virtualized) + auto: the grid fills its parent width and the body column is
         // constrained with minmax(0, 1fr) — NOT `${totalW}px` or `1fr` — so the
         // answer columns scroll HORIZONTALLY inside the grid while the frozen
         // layer pins sticky-left. The PAGE owns vertical scroll: the scroll
@@ -298,6 +302,14 @@ export class DOMRenderer {
         this.colHeaderEl.style.overflow = 'hidden';
         this.colHeaderEl.style.gridRow = '1';
         this.colHeaderEl.style.gridColumn = showRowHeaders ? '2' : '1 / -1';
+        if (this.ctx.virtualize) {
+          // Page scroll: the column headers (and the corner) stay at the top.
+          for (const el of [this.colHeaderEl, this.cornerEl]) {
+            el.style.position = 'sticky';
+            el.style.top = '0';
+            el.style.zIndex = '4';
+          }
+        }
 
         // Row headers don't scroll internally (page owns vertical scroll).
         this.rowHeaderEl.style.overflow = 'visible';
@@ -428,7 +440,17 @@ export class DOMRenderer {
 
     let vpStartRow: number, vpEndRow: number, vpStartCol: number, vpEndCol: number;
 
-    if (isAutoLayout) {
+    if (isAutoLayout && this.ctx.virtualize) {
+      // The page scrolls vertically: what is in view is where the window cuts
+      // the body. Columns still scroll inside the scroll container.
+      const pageTop = Math.max(0, -sc.getBoundingClientRect().top);
+      const pageH = window.innerHeight;
+      const pageOverscan = 6;
+      vpStartRow = Math.max(0, rows.getRowAtY(pageTop) - pageOverscan);
+      vpEndRow = Math.min(totalVisibleRows - 1, rows.getRowAtY(pageTop + pageH) + pageOverscan);
+      vpStartCol = Math.max(0, columns.getColAtX(scrollX) - overscan);
+      vpEndCol = Math.min(columns.count - 1, columns.getColAtX(scrollX + containerW) + overscan);
+    } else if (isAutoLayout) {
       // Auto layout: render all rows and columns
       vpStartRow = 0;
       vpEndRow = totalVisibleRows - 1;
@@ -1113,6 +1135,18 @@ export class DOMRenderer {
       sc.scrollLeft = x + w - viewW;
     }
 
+    if (this.ctx.layout === 'auto' && this.ctx.virtualize) {
+      // The page owns vertical scroll: bring the row into the window.
+      const top = sc.getBoundingClientRect().top + y;
+      const headerH = this.ctx.showColHeaders ? this.colHeaderEl.offsetHeight : 0;
+      if (top < headerH) {
+        window.scrollBy(0, top - headerH);
+      } else if (top + h > window.innerHeight) {
+        window.scrollBy(0, top + h - window.innerHeight);
+      }
+      return;
+    }
+
     // Scroll vertically if needed
     if (y < sc.scrollTop) {
       sc.scrollTop = y;
@@ -1145,6 +1179,11 @@ export class DOMRenderer {
   }
 
   // ── Event handlers ──
+
+  /** Virtualized auto layout follows the page scroll. */
+  private handlePageScroll = (): void => {
+    if (this.ctx?.layout === 'auto' && this.ctx.virtualize) this.schedulePaint();
+  };
 
   private handleScroll = (): void => {
     // Frozen columns/header are CSS position:sticky (compositor-pinned), so no
@@ -1231,6 +1270,8 @@ export class DOMRenderer {
   destroy(): void {
     cancelAnimationFrame(this.rafId);
     this.scrollContainer.removeEventListener('scroll', this.handleScroll);
+    window.removeEventListener('scroll', this.handlePageScroll);
+    window.removeEventListener('resize', this.handlePageScroll);
     this.viewportEl.removeEventListener('mousedown', this.handleMouseDown);
     this.viewportEl.removeEventListener('dblclick', this.handleDblClick);
     this.viewportEl.removeEventListener('contextmenu', this.handleContextMenu);
