@@ -482,8 +482,35 @@
   color: #334155;
 }
 
-.wt-context-menu-item:hover {
+.wt-context-menu-item:hover,
+.wt-context-menu-item:focus,
+.wt-context-menu-item[aria-expanded="true"] {
   background: #f1f5f9;
+  outline: none;
+}
+
+.wt-context-menu-icon {
+  display: none;
+  width: 16px;
+  flex: none;
+  text-align: center;
+  font-size: 15px;
+  color: #64748b;
+}
+
+.wt-context-menu--icons .wt-context-menu-icon {
+  display: inline-block;
+}
+
+.wt-context-menu-label {
+  flex: 1 1 auto;
+}
+
+.wt-context-menu-caret {
+  margin-left: 12px;
+  font-size: 15px;
+  line-height: 1;
+  color: #94a3b8;
 }
 
 .wt-context-menu-item--disabled {

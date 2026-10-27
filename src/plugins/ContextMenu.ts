@@ -35,12 +35,16 @@ export interface MenuItemConfig {
   visible?: boolean | ((ctx: MenuContext) => boolean);
   separator?: boolean;
   action?: (ctx: MenuContext) => void;
+  /** CSS class(es) of an icon shown before the label (rendered as <i aria-hidden>). */
+  icon?: string;
+  /** Items of a submenu. An item whose children all resolve away is dropped. */
+  children?: MenuItemConfig[];
 }
 
 /** A resolved, renderable menu entry: either a separator or a concrete item. */
 export type ResolvedMenuEntry =
   | { type: 'separator' }
-  | { type: 'item'; item: MenuItemConfig };
+  | { type: 'item'; item: MenuItemConfig; children?: ResolvedMenuEntry[] };
 
 /**
  * Resolve the raw menu config into the list of entries that should actually be
@@ -64,6 +68,14 @@ export function resolveMenuEntries(items: MenuItemConfig[], ctx: MenuContext): R
     }
     const disabled = typeof item.disabled === 'function' ? item.disabled(ctx) : (item.disabled ?? false);
     if (disabled) {
+      continue;
+    }
+    if (item.children) {
+      const children = resolveMenuEntries(item.children, ctx);
+      if (children.length === 0 && !item.action) {
+        continue;
+      }
+      kept.push({ type: 'item', item, children });
       continue;
     }
     kept.push({ type: 'item', item });
@@ -92,86 +104,277 @@ export function resolveMenuEntries(items: MenuItemConfig[], ctx: MenuContext): R
   return collapsed;
 }
 
+interface MenuLevel {
+  el: HTMLElement;
+  rows: HTMLElement[];
+  entries: Extract<ResolvedMenuEntry, { type: 'item' }>[];
+  /** Row (in the level below) that opened this submenu. */
+  parentRow: HTMLElement | null;
+}
+
+let menuUid = 0;
+
+/**
+ * Context menu with nested submenus. ARIA menu pattern: role=menu/menuitem,
+ * aria-haspopup + aria-expanded on submenu parents, roving focus. Keys:
+ * ArrowUp/Down, Home/End, Enter/Space (run or open), ArrowRight opens a
+ * submenu, ArrowLeft/Escape closes one level, Tab closes everything.
+ */
 export class ContextMenu {
-  private el: HTMLElement | null = null;
+  private levels: MenuLevel[] = [];
+  private ctx: MenuContext | null = null;
+  private returnFocus: HTMLElement | null = null;
+  private uid = ++menuUid;
+
   private closeHandler = (e: MouseEvent) => {
-    if (this.el && !this.el.contains(e.target as Node)) {
+    if (!this.levels.some((level) => level.el.contains(e.target as Node))) {
       this.close();
     }
   };
+
   private keyHandler = (e: KeyboardEvent) => {
-    if (e.key === 'Escape') this.close();
+    const level = this.levels[this.levels.length - 1];
+    if (!level) return;
+    const index = level.rows.indexOf(document.activeElement as HTMLElement);
+    const focus = (i: number) => {
+      if (level.rows.length === 0) return;
+      const next = (i + level.rows.length) % level.rows.length;
+      level.rows[next].focus();
+    };
+    switch (e.key) {
+      case 'ArrowDown':
+        e.preventDefault();
+        focus(index + 1);
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        focus(index < 0 ? level.rows.length - 1 : index - 1);
+        break;
+      case 'Home':
+        e.preventDefault();
+        focus(0);
+        break;
+      case 'End':
+        e.preventDefault();
+        focus(level.rows.length - 1);
+        break;
+      case 'ArrowRight':
+        if (index >= 0 && level.entries[index].children) {
+          e.preventDefault();
+          this.openSubmenu(this.levels.length - 1, index, true);
+        }
+        break;
+      case 'ArrowLeft':
+        if (this.levels.length > 1) {
+          e.preventDefault();
+          this.closeLevelsFrom(this.levels.length - 1, true);
+        }
+        break;
+      case 'Escape':
+        e.preventDefault();
+        if (this.levels.length > 1) {
+          this.closeLevelsFrom(this.levels.length - 1, true);
+        } else {
+          this.close();
+        }
+        break;
+      case 'Enter':
+      case ' ':
+        if (index >= 0) {
+          e.preventDefault();
+          this.activate(this.levels.length - 1, index, true);
+        }
+        break;
+      case 'Tab':
+        this.close();
+        break;
+    }
   };
 
   open(x: number, y: number, items: MenuItemConfig[], ctx: MenuContext): void {
     this.close();
+    this.ctx = ctx;
+    this.returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
 
-    this.el = document.createElement('div');
-    this.el.className = 'wt-context-menu';
+    const entries = resolveMenuEntries(items, ctx);
+    const level = this.buildLevel(entries, null);
+    document.body.appendChild(level.el);
+    this.place(level.el, x, y);
+    this.levels.push(level);
+    level.rows[0]?.focus();
+
+    requestAnimationFrame(() => {
+      document.addEventListener('mousedown', this.closeHandler);
+      document.addEventListener('keydown', this.keyHandler, true);
+    });
+  }
+
+  private buildLevel(entries: ResolvedMenuEntry[], parentRow: HTMLElement | null): MenuLevel {
+    const el = document.createElement('div');
+    el.className = parentRow ? 'wt-context-menu wt-context-menu--sub' : 'wt-context-menu';
+    el.setAttribute('role', 'menu');
+    if (parentRow) {
+      el.id = parentRow.id + '-menu';
+      el.setAttribute('aria-labelledby', parentRow.id);
+    }
+
+    const level: MenuLevel = { el, rows: [], entries: [], parentRow };
+    const depth = this.levels.length;
 
     // Disabled items are omitted entirely (see resolveMenuEntries), so every
-    // item we render here is actionable.
-    for (const entry of resolveMenuEntries(items, ctx)) {
+    // item rendered here is actionable.
+    for (const entry of entries) {
       if (entry.type === 'separator') {
         const sep = document.createElement('div');
         sep.className = 'wt-context-menu-separator';
-        this.el.appendChild(sep);
+        sep.setAttribute('role', 'separator');
+        el.appendChild(sep);
         continue;
       }
 
       const item = entry.item;
       const row = document.createElement('div');
       row.className = 'wt-context-menu-item';
+      row.setAttribute('role', 'menuitem');
+      row.tabIndex = -1;
+      row.id = `wt-menu-${this.uid}-${depth}-${level.rows.length}`;
+
+      const icon = document.createElement('i');
+      icon.className = 'wt-context-menu-icon' + (item.icon ? ' ' + item.icon : '');
+      icon.setAttribute('aria-hidden', 'true');
+      row.appendChild(icon);
 
       const label = document.createElement('span');
+      label.className = 'wt-context-menu-label';
       label.textContent = item.label;
       row.appendChild(label);
 
-      if (item.shortcut) {
+      if (entry.children) {
+        row.setAttribute('aria-haspopup', 'menu');
+        row.setAttribute('aria-expanded', 'false');
+        const caret = document.createElement('span');
+        caret.className = 'wt-context-menu-caret';
+        caret.setAttribute('aria-hidden', 'true');
+        caret.textContent = '\u203A';
+        row.appendChild(caret);
+      } else if (item.shortcut) {
         const shortcut = document.createElement('span');
         shortcut.className = 'wt-context-menu-shortcut';
         shortcut.textContent = item.shortcut;
         row.appendChild(shortcut);
       }
 
-      if (item.action) {
-        const action = item.action;
-        row.addEventListener('click', (e) => {
-          e.stopPropagation();
-          this.close();
-          action(ctx);
-        });
-      }
+      const index = level.rows.length;
+      row.addEventListener('mouseenter', () => {
+        const levelIndex = this.levels.indexOf(level);
+        if (levelIndex < 0) return;
+        row.focus();
+        if (entry.children) {
+          this.openSubmenu(levelIndex, index, false);
+        } else {
+          this.closeLevelsFrom(levelIndex + 1, false);
+        }
+      });
+      row.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const levelIndex = this.levels.indexOf(level);
+        if (levelIndex >= 0) this.activate(levelIndex, index, false);
+      });
 
-      this.el.appendChild(row);
+      el.appendChild(row);
+      level.rows.push(row);
+      level.entries.push(entry);
     }
 
-    document.body.appendChild(this.el);
+    // Icon column only when this level has icons, so labels stay aligned.
+    if (level.entries.some((entry) => entry.item.icon)) {
+      el.classList.add('wt-context-menu--icons');
+    }
 
-    // Adjust position to stay in viewport
-    const rect = this.el.getBoundingClientRect();
+    return level;
+  }
+
+  /** Run an item, or open its submenu. */
+  private activate(levelIndex: number, index: number, fromKeyboard: boolean): void {
+    const level = this.levels[levelIndex];
+    const entry = level?.entries[index];
+    if (!entry || !this.ctx) return;
+    if (entry.children) {
+      this.openSubmenu(levelIndex, index, fromKeyboard);
+      return;
+    }
+    const action = entry.item.action;
+    const ctx = this.ctx;
+    this.close();
+    action?.(ctx);
+  }
+
+  private openSubmenu(levelIndex: number, index: number, focusFirst: boolean): void {
+    const level = this.levels[levelIndex];
+    const entry = level.entries[index];
+    const row = level.rows[index];
+    const open = this.levels[levelIndex + 1];
+    if (open && open.parentRow === row) {
+      if (focusFirst) open.rows[0]?.focus();
+      return;
+    }
+    this.closeLevelsFrom(levelIndex + 1, false);
+    if (!entry.children) return;
+
+    const sub = this.buildLevel(entry.children, row);
+    document.body.appendChild(sub.el);
+    row.setAttribute('aria-expanded', 'true');
+    row.setAttribute('aria-controls', sub.el.id);
+
+    // Beside the parent row; flips to the left side near the viewport edge.
+    const rowRect = row.getBoundingClientRect();
+    const subRect = sub.el.getBoundingClientRect();
+    let x = rowRect.right - 2;
+    if (x + subRect.width > window.innerWidth) x = rowRect.left - subRect.width + 2;
+    this.place(sub.el, x, rowRect.top - 4);
+
+    this.levels.push(sub);
+    if (focusFirst) sub.rows[0]?.focus();
+  }
+
+  /** Close submenu levels from `levelIndex` up; optionally focus the row that opened them. */
+  private closeLevelsFrom(levelIndex: number, focusParent: boolean): void {
+    while (this.levels.length > levelIndex && this.levels.length > 0) {
+      const level = this.levels.pop()!;
+      level.el.remove();
+      if (level.parentRow) {
+        level.parentRow.setAttribute('aria-expanded', 'false');
+        level.parentRow.removeAttribute('aria-controls');
+        if (focusParent && this.levels.length === levelIndex) level.parentRow.focus();
+      }
+    }
+  }
+
+  private place(el: HTMLElement, x: number, y: number): void {
+    const rect = el.getBoundingClientRect();
     if (x + rect.width > window.innerWidth) x = window.innerWidth - rect.width - 4;
     if (y + rect.height > window.innerHeight) y = window.innerHeight - rect.height - 4;
-    this.el.style.left = `${Math.max(0, x)}px`;
-    this.el.style.top = `${Math.max(0, y)}px`;
-
-    requestAnimationFrame(() => {
-      document.addEventListener('mousedown', this.closeHandler);
-      document.addEventListener('keydown', this.keyHandler);
-    });
+    el.style.left = `${Math.max(0, x)}px`;
+    el.style.top = `${Math.max(0, y)}px`;
   }
 
   close(): void {
-    if (this.el) {
-      this.el.remove();
-      this.el = null;
-    }
+    const wasOpen = this.levels.length > 0;
+    this.closeLevelsFrom(0, false);
+    this.ctx = null;
     document.removeEventListener('mousedown', this.closeHandler);
-    document.removeEventListener('keydown', this.keyHandler);
+    document.removeEventListener('keydown', this.keyHandler, true);
+    if (wasOpen && this.returnFocus?.isConnected) this.returnFocus.focus();
+    this.returnFocus = null;
   }
 
   get isOpen(): boolean {
-    return this.el !== null;
+    return this.levels.length > 0;
+  }
+
+  /** Open menu levels (root first), for hosts and tests. */
+  get elements(): HTMLElement[] {
+    return this.levels.map((level) => level.el);
   }
 
   destroy(): void {
