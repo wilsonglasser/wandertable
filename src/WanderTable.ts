@@ -220,6 +220,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
       preset: options.preset,
       layout: options.layout ?? 'scroll',
       virtualize: options.virtualize ?? false,
+      stickyTop: options.stickyTop,
       headerRows: this.headerRows.length > 0 ? this.headerRows : undefined,
       cellLabel: options.cellLabel,
     });

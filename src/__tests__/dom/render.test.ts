@@ -340,6 +340,16 @@ describe('auto layout virtualized by the page scroll', () => {
     expect(host.querySelector<HTMLElement>('.wt-col-headers')!.style.position).toBe('sticky');
   });
 
+  it('pins the column header below a host offset when stickyTop is set', async () => {
+    const other = document.createElement('div');
+    document.body.appendChild(other);
+    const t = new WanderTable(other, { layout: 'auto', virtualize: true, rowCount: 10, colCount: 2, stickyTop: 'var(--bar, 48px)' });
+    await frame();
+    expect(other.querySelector<HTMLElement>('.wt-col-headers')!.style.top).toBe('var(--bar, 48px)');
+    t.destroy();
+    other.remove();
+  });
+
   it('follows the window scroll', async () => {
     containerTop = -(ROW_H * 3000);
     window.dispatchEvent(new Event('scroll'));

@@ -330,6 +330,8 @@ export interface WanderTableOptions {
    * headers sticky at the top; columns scroll inside the grid.
    */
   virtualize?: boolean;
+  /** With virtualize: CSS `top` of the sticky column header (e.g. 'var(--toolbar-height)'), default 0. */
+  stickyTop?: string;
   /**
    * External cell data. When set, the grid reads from it (rowCount/colCount
    * included) and the host calls invalidate()/setSize() after changing it.

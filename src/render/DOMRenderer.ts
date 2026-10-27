@@ -37,6 +37,8 @@ interface RendererContext {
   layout: 'scroll' | 'auto';
   /** layout 'auto' only: render just the rows in view of the page (window) scroll. */
   virtualize?: boolean;
+  /** CSS top of the sticky column header in virtualized auto layout (e.g. below a host toolbar). */
+  stickyTop?: string;
   headerRows?: import('../columns/GroupedHeaders.js').HeaderCell[][];
   /** Accessible name for a cell (aria-label); null/undefined = use its text. */
   cellLabel?: (row: number, col: number, data: CellData | undefined) => string | null | undefined;
@@ -306,7 +308,7 @@ export class DOMRenderer {
           // Page scroll: the column headers (and the corner) stay at the top.
           for (const el of [this.colHeaderEl, this.cornerEl]) {
             el.style.position = 'sticky';
-            el.style.top = '0';
+            el.style.top = this.ctx.stickyTop ?? '0';
             el.style.zIndex = '4';
           }
         }
@@ -1138,7 +1140,9 @@ export class DOMRenderer {
     if (this.ctx.layout === 'auto' && this.ctx.virtualize) {
       // The page owns vertical scroll: bring the row into the window.
       const top = sc.getBoundingClientRect().top + y;
-      const headerH = this.ctx.showColHeaders ? this.colHeaderEl.offsetHeight : 0;
+      // Rows hide under the sticky header and whatever the host pins above it.
+      const headerH = (this.ctx.showColHeaders ? this.colHeaderEl.offsetHeight : 0)
+        + (parseFloat(getComputedStyle(this.colHeaderEl).top) || 0);
       if (top < headerH) {
         window.scrollBy(0, top - headerH);
       } else if (top + h > window.innerHeight) {
