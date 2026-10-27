@@ -226,6 +226,25 @@ export type GridIntent =
   | { type: 'undo' }
   | { type: 'redo' };
 
+/** Built-in UI strings (context menu). */
+export interface GridLabels {
+  copy: string;
+  paste: string;
+  cut: string;
+  deleteContent: string;
+  insertRowAbove: string;
+  insertRowBelow: string;
+  insertColumnLeft: string;
+  insertColumnRight: string;
+  sortAscending: string;
+  sortDescending: string;
+  clearSort: string;
+  autoFitColumn: string;
+  selectRow: string;
+  undo: string;
+  redo: string;
+}
+
 /** Undo availability when the host owns history (external source). */
 export interface HistoryState {
   canUndo(): boolean;
@@ -308,6 +327,8 @@ export interface WanderTableOptions {
   source?: CellSource;
   /** Host text/html for copied ranges (e.g. its own field payload); null = default table. */
   clipboardHtml?: (range: SelectionRange) => string | null;
+  /** Translations of the built-in UI strings. */
+  labels?: Partial<GridLabels>;
   /** Called for every GridIntent (same as the 'intent' event). */
   onIntent?: (intent: GridIntent) => void;
   /** External source mode: undo/redo availability for the context menu. */

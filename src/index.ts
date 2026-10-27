@@ -1,5 +1,5 @@
 import './styles.css';
-export { WanderTable } from './WanderTable.js';
+export { WanderTable, DEFAULT_LABELS } from './WanderTable.js';
 export { DataModel } from './core/DataModel.js';
 export { SelectionModel } from './core/SelectionModel.js';
 export { EventEmitter } from './core/EventEmitter.js';

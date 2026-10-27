@@ -11,6 +11,7 @@ import type {
   WanderTableOptions,
   CellSource,
   GridIntent,
+  GridLabels,
 } from './types/index.js';
 import { DEFAULT_THEME } from './types/index.js';
 import { DataModel } from './core/DataModel.js';
@@ -39,6 +40,25 @@ import { flattenColumns, type HeaderCell } from './columns/GroupedHeaders.js';
 import { PaginationBar } from './render/PaginationBar.js';
 import { LoadingOverlay } from './render/LoadingOverlay.js';
 import { exportCSV, exportJSON, downloadFile, type ExportOptions } from './plugins/Export.js';
+
+/** Built-in UI strings; hosts translate them through options.labels. */
+export const DEFAULT_LABELS: GridLabels = {
+  copy: 'Copy',
+  paste: 'Paste',
+  cut: 'Cut',
+  deleteContent: 'Delete content',
+  insertRowAbove: 'Insert row above',
+  insertRowBelow: 'Insert row below',
+  insertColumnLeft: 'Insert column left',
+  insertColumnRight: 'Insert column right',
+  sortAscending: 'Sort ascending',
+  sortDescending: 'Sort descending',
+  clearSort: 'Clear sort',
+  autoFitColumn: 'Auto-fit column width',
+  selectRow: 'Select row',
+  undo: 'Undo',
+  redo: 'Redo',
+};
 
 export class WanderTable extends EventEmitter<WanderTableEvents> {
   readonly data: DataModel;
@@ -80,6 +100,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
   constructor(container: HTMLElement, options: WanderTableOptions = {}) {
     super();
     this.options = options;
+    this.contextMenuItems = this.defaultMenuItems();
 
     const defaultRowHeight = options.defaultRowHeight ?? 28;
     const defaultColWidth = options.defaultColWidth ?? 100;
@@ -619,18 +640,22 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
 
   // ── Context Menu ──
 
-  /** Override this to customize context menu items */
-  contextMenuItems: MenuItemConfig[] = [
+  /** Override this to customize context menu items (built in the constructor, after options). */
+  contextMenuItems!: MenuItemConfig[];
+
+  private defaultMenuItems(): MenuItemConfig[] {
+    const L = { ...DEFAULT_LABELS, ...this.options.labels };
+    return [
     // ── Cell items ──
-    { label: 'Copy', shortcut: 'Ctrl+C', visible: (ctx) => ctx.target === 'cell', action: () => { void this.clipboard.copyAsync(); } },
+    { id: 'copy', label: L.copy, shortcut: 'Ctrl+C', visible: (ctx) => ctx.target === 'cell', action: () => { void this.clipboard.copyAsync(); } },
     {
-      label: 'Paste', shortcut: 'Ctrl+V',
+      id: 'paste', label: L.paste, shortcut: 'Ctrl+V',
       visible: (ctx) => ctx.target === 'cell',
       disabled: (ctx) => ctx.readOnly,
       action: () => { void this.pasteFromMenu(); },
     },
     {
-      label: 'Cut', shortcut: 'Ctrl+X',
+      id: 'cut', label: L.cut, shortcut: 'Ctrl+X',
       visible: (ctx) => ctx.target === 'cell',
       disabled: (ctx) => ctx.readOnly,
       action: () => { void this.cutFromMenu(); },
@@ -640,7 +665,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
       visible: (ctx) => ctx.target === 'cell',
     },
     {
-      label: 'Delete content', shortcut: 'Del',
+      id: 'deleteContent', label: L.deleteContent, shortcut: 'Del',
       visible: (ctx) => ctx.target === 'cell' && ctx.selectedCount > 0,
       disabled: (ctx) => ctx.readOnly,
       action: () => this.deleteSelected(),
@@ -650,25 +675,25 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
       visible: (ctx) => ctx.target === 'cell',
     },
     {
-      label: 'Insert row above',
+      id: 'insertRowAbove', label: L.insertRowAbove,
       visible: (ctx) => ctx.target === 'cell' || ctx.target === 'row-header',
       disabled: (ctx) => ctx.readOnly,
       action: (ctx) => this.commit({ type: 'insertRows', at: ctx.row, count: 1 }),
     },
     {
-      label: 'Insert row below',
+      id: 'insertRowBelow', label: L.insertRowBelow,
       visible: (ctx) => ctx.target === 'cell' || ctx.target === 'row-header',
       disabled: (ctx) => ctx.readOnly,
       action: (ctx) => this.commit({ type: 'insertRows', at: ctx.row + 1, count: 1 }),
     },
     {
-      label: 'Insert column left',
+      id: 'insertColumnLeft', label: L.insertColumnLeft,
       visible: (ctx) => (ctx.target === 'cell' && !ctx.isMultiSelect) || ctx.target === 'column-header',
       disabled: (ctx) => ctx.readOnly,
       action: (ctx) => this.commit({ type: 'insertColumns', at: ctx.col, count: 1 }),
     },
     {
-      label: 'Insert column right',
+      id: 'insertColumnRight', label: L.insertColumnRight,
       visible: (ctx) => (ctx.target === 'cell' && !ctx.isMultiSelect) || ctx.target === 'column-header',
       disabled: (ctx) => ctx.readOnly,
       action: (ctx) => this.commit({ type: 'insertColumns', at: ctx.col + 1, count: 1 }),
@@ -680,17 +705,17 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
       visible: (ctx) => ctx.target === 'column-header',
     },
     {
-      label: 'Sort ascending',
+      id: 'sortAscending', label: L.sortAscending,
       visible: (ctx) => ctx.target === 'column-header',
       action: (ctx) => this.sort(ctx.col, 'asc'),
     },
     {
-      label: 'Sort descending',
+      id: 'sortDescending', label: L.sortDescending,
       visible: (ctx) => ctx.target === 'column-header',
       action: (ctx) => this.sort(ctx.col, 'desc'),
     },
     {
-      label: 'Clear sort',
+      id: 'clearSort', label: L.clearSort,
       visible: (ctx) => ctx.target === 'column-header' && this.viewMapping.getSortState() !== null,
       action: () => this.clearSort(),
     },
@@ -699,7 +724,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
       visible: (ctx) => ctx.target === 'column-header',
     },
     {
-      label: 'Auto-fit column width',
+      id: 'autoFitColumn', label: L.autoFitColumn,
       visible: (ctx) => ctx.target === 'column-header' || ctx.target === 'cell',
       action: (ctx) => this.autoFitColumn(ctx.col >= 0 ? ctx.col : 0),
     },
@@ -710,7 +735,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
       visible: (ctx) => ctx.target === 'row-header',
     },
     {
-      label: 'Select row',
+      id: 'selectRow', label: L.selectRow,
       visible: (ctx) => ctx.target === 'row-header',
       action: (ctx) => this.selection.selectRow(ctx.row),
     },
@@ -718,16 +743,17 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
     // ── Common items ──
     { label: '', separator: true },
     {
-      label: 'Undo', shortcut: 'Ctrl+Z',
+      id: 'undo', label: L.undo, shortcut: 'Ctrl+Z',
       disabled: (ctx) => !ctx.canUndo,
       action: () => this.commit({ type: 'undo' }),
     },
     {
-      label: 'Redo', shortcut: 'Ctrl+Y',
+      id: 'redo', label: L.redo, shortcut: 'Ctrl+Y',
       disabled: (ctx) => !ctx.canRedo,
       action: () => this.commit({ type: 'redo' }),
     },
-  ];
+    ];
+  }
 
   private buildMenuContext(row: number, col: number, target: MenuTarget = 'cell'): MenuContext {
     const bounds = this.selection.getBounds();

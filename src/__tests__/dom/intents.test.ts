@@ -217,3 +217,18 @@ describe('keyboard', () => {
     expect(table.getSelection()[0]).toMatchObject({ startRow: 49, startCol: 4 });
   });
 });
+
+describe('labels', () => {
+  it('relabels built-in menu items by id and keeps the defaults for the rest', () => {
+    stubLayout();
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const table = new WanderTable(host, { labels: { copy: 'Copiar', undo: 'Desfazer' } });
+    const byId = (id: string) => table.contextMenuItems.find((i) => i.id === id)?.label;
+    expect(byId('copy')).toBe('Copiar');
+    expect(byId('undo')).toBe('Desfazer');
+    expect(byId('paste')).toBe('Paste');
+    table.destroy();
+    host.remove();
+  });
+});

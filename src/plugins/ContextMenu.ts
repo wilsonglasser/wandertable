@@ -25,6 +25,8 @@ export interface MenuContext {
 }
 
 export interface MenuItemConfig {
+  /** Stable key of a built-in item (e.g. 'insertRowAbove'), to filter or relabel it. */
+  id?: string;
   label: string;
   shortcut?: string;
   /** Static boolean or callback evaluated at open time */
