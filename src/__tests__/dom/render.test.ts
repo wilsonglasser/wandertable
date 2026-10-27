@@ -4,7 +4,7 @@ import { WanderTable } from '../../WanderTable.js';
 import type { CellData, CellSource } from '../../types/index.js';
 
 const VIEW_W = 800;
-const VIEW_H = 400;
+let VIEW_H = 400;
 const ROW_H = 28;
 
 /** happy-dom has no layout engine: give the scroll container a fixed client box. */
@@ -27,7 +27,9 @@ function frame(): Promise<void> {
 }
 
 function visibleCells(root: HTMLElement): HTMLElement[] {
-  return [...root.querySelectorAll<HTMLElement>('.wt-cell')].filter((el) => el.style.display !== 'none' && el.dataset.row !== undefined);
+  return [...root.querySelectorAll<HTMLElement>('.wt-cell')].filter(
+    (el) => el.style.display !== 'none' && el.dataset.row !== undefined && (el.parentElement as HTMLElement).style.display !== 'none',
+  );
 }
 
 function cellAt(root: HTMLElement, row: number, col: number): HTMLElement | undefined {
@@ -170,5 +172,133 @@ describe('external CellSource', () => {
     sc.dispatchEvent(new Event('scroll'));
     await frame();
     expect(cellAt(host, 3999, 0)?.textContent).toBe('last');
+  });
+});
+
+describe('incremental paint', () => {
+  let host: HTMLElement;
+  let table: WanderTable;
+  let paints: string[];
+  let cleanups = 0;
+
+  beforeEach(async () => {
+    stubLayout();
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    paints = [];
+    cleanups = 0;
+    table = new WanderTable(host, {
+      rowCount: 2000,
+      colCount: 10,
+      defaultRowHeight: ROW_H,
+      defaultColWidth: 100,
+      defaultCellType: 'probe',
+      cellLabel: (row, col, data) => (data ? `R${row + 1}C${col + 1} ${String(data.value)}` : null),
+    });
+    table.registerRenderer('probe', {
+      render(el, data) {
+        paints.push(`${el.dataset.row}:${el.dataset.col}`);
+        el.textContent = data?.value == null ? '' : String(data.value);
+      },
+      cleanup() {
+        cleanups++;
+      },
+    });
+    const patches = [];
+    for (let r = 0; r < 2000; r++) {
+      patches.push({ row: r, col: 0, data: { value: `v${r}`, className: r === 0 ? 'custom-zero' : undefined } });
+    }
+    table.applyPatch(patches);
+    await frame();
+    paints = [];
+  });
+
+  afterEach(() => {
+    table.destroy();
+    host.remove();
+    VIEW_H = 400;
+  });
+
+  it('a row parked in the pool repaints when it comes back after its cell changed', async () => {
+    const sc = host.querySelector<HTMLElement>('.wt-scroll-container')!;
+    // 260px shows rows 0-12 (with overscan); 230px parks just row 12, so the
+    // pool hands that same element back when the viewport grows again.
+    VIEW_H = 260;
+    sc.dispatchEvent(new Event('scroll'));
+    await frame();
+    VIEW_H = 230;
+    sc.dispatchEvent(new Event('scroll'));
+    await frame();
+    expect(cellAt(host, 12, 0)).toBeUndefined();
+    table.setCellValue(12, 0, 'changed while parked');
+    await frame();
+    VIEW_H = 260;
+    sc.dispatchEvent(new Event('scroll'));
+    await frame();
+    expect(cellAt(host, 12, 0)?.textContent).toBe('changed while parked');
+  });
+
+  it('a selection change repaints no cell content, only state', async () => {
+    table.setSelection([{ startRow: 2, startCol: 1, endRow: 2, endCol: 1 }]);
+    await frame();
+    expect(paints).toEqual([]);
+    expect(cellAt(host, 2, 1)?.classList.contains('wt-cell--selected')).toBe(true);
+    expect(cellAt(host, 2, 1)?.getAttribute('aria-selected')).toBe('true');
+    expect(cellAt(host, 0, 0)?.getAttribute('aria-selected')).toBe('false');
+  });
+
+  it('a value change repaints only that cell', async () => {
+    table.setCellValue(5, 0, 'new');
+    await frame();
+    expect(paints).toEqual(['5:0']);
+    expect(cellAt(host, 5, 0)?.textContent).toBe('new');
+  });
+
+  it('a recycled element drops the previous cell class and runs cleanup', async () => {
+    expect(cellAt(host, 0, 0)?.classList.contains('custom-zero')).toBe(true);
+    const sc = host.querySelector<HTMLElement>('.wt-scroll-container')!;
+    sc.scrollTop = ROW_H * 1000;
+    sc.dispatchEvent(new Event('scroll'));
+    await frame();
+    expect(host.querySelectorAll('.wt-cell.custom-zero').length).toBe(0);
+    expect(cleanups).toBeGreaterThan(0);
+  });
+
+  it('a cell changed while off-screen shows the new value when scrolled back', async () => {
+    const sc = host.querySelector<HTMLElement>('.wt-scroll-container')!;
+    sc.scrollTop = ROW_H * 1000;
+    sc.dispatchEvent(new Event('scroll'));
+    await frame();
+    table.setCellValue(1, 0, 'changed while away');
+    await frame();
+    sc.scrollTop = 0;
+    sc.dispatchEvent(new Event('scroll'));
+    await frame();
+    expect(cellAt(host, 1, 0)?.textContent).toBe('changed while away');
+  });
+
+  it('exposes an ARIA grid with indexes, names and the active cell', async () => {
+    const root = host.querySelector<HTMLElement>('.wt-root') ?? host;
+    expect(root.getAttribute('role')).toBe('grid');
+    expect(root.getAttribute('aria-rowcount')).toBe('2001');
+    expect(root.getAttribute('aria-colcount')).toBe('10');
+
+    const cell = cellAt(host, 4, 0)!;
+    expect(cell.getAttribute('role')).toBe('gridcell');
+    expect(cell.getAttribute('aria-colindex')).toBe('1');
+    expect(cell.parentElement?.getAttribute('role')).toBe('row');
+    expect(cell.parentElement?.getAttribute('aria-rowindex')).toBe('6');
+    expect(cell.getAttribute('aria-label')).toBe('R5C1 v4');
+    expect(cellAt(host, 4, 1)?.hasAttribute('aria-label')).toBe(false);
+
+    const header = host.querySelector<HTMLElement>('.wt-col-header-cell')!;
+    expect(header.getAttribute('role')).toBe('columnheader');
+    expect(host.querySelector('.wt-row-headers')?.getAttribute('aria-hidden')).toBe('true');
+
+    table.setSelection([{ startRow: 4, startCol: 0, endRow: 4, endCol: 0 }]);
+    await frame();
+    const active = root.getAttribute('aria-activedescendant');
+    expect(active).toBeTruthy();
+    expect(document.getElementById(active!)).toBe(cellAt(host, 4, 0));
   });
 });

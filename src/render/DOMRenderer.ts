@@ -1,4 +1,4 @@
-import type { CellRenderer, CellSource, CellState, ThemeConfig, Viewport } from '../types/index.js';
+import type { CellData, CellRenderer, CellSource, CellState, ThemeConfig, Viewport } from '../types/index.js';
 import type { ColumnModel } from '../columns/ColumnModel.js';
 import type { RowModel } from '../rows/RowModel.js';
 import type { SelectionModel } from '../core/SelectionModel.js';
@@ -36,7 +36,23 @@ interface RendererContext {
   preset?: string;
   layout: 'scroll' | 'auto';
   headerRows?: import('../columns/GroupedHeaders.js').HeaderCell[][];
+  /** Accessible name for a cell (aria-label); null/undefined = use its text. */
+  cellLabel?: (row: number, col: number, data: CellData | undefined) => string | null | undefined;
 }
+
+/**
+ * Pooled cell element with the cell it currently shows. A cell whose binding
+ * is unchanged and not invalidated skips its content paint.
+ */
+interface CellEl extends HTMLElement {
+  _wtRow?: number;
+  _wtCol?: number;
+  _wtRenderer?: CellRenderer;
+}
+
+/** Same stride as DataModel: dirty cells are tracked by row * stride + col. */
+const DIRTY_STRIDE = 65536;
+let gridUid = 0;
 
 interface PooledRow {
   el: HTMLElement;
@@ -67,6 +83,12 @@ export class DOMRenderer {
 
   private rafId = 0;
   private needsRender = false;
+  /** Next paint repaints every visible cell's content (data/config/structure changed). */
+  private contentDirtyAll = true;
+  /** Cells whose content changed since the last paint (row * DIRTY_STRIDE + col). */
+  private dirtyCells = new Set<number>();
+  private readonly uid = ++gridUid;
+  private cellSeq = 0;
   /** Measured header height when autoHeaderHeight is on (null = use theme). */
   private measuredHeaderHeight: number | null = null;
 
@@ -82,10 +104,13 @@ export class DOMRenderer {
     this.container = container;
     this.container.classList.add('wt-root');
     this.container.setAttribute('tabindex', '0');
+    this.container.setAttribute('role', 'grid');
+    this.container.setAttribute('aria-multiselectable', 'true');
 
     // Corner cell
     this.cornerEl = document.createElement('div');
     this.cornerEl.className = 'wt-corner';
+    this.cornerEl.setAttribute('aria-hidden', 'true');
 
     // Column headers
     this.colHeaderEl = document.createElement('div');
@@ -94,6 +119,8 @@ export class DOMRenderer {
     // Row headers
     this.rowHeaderEl = document.createElement('div');
     this.rowHeaderEl.className = 'wt-row-headers';
+    // Row numbers are visual only: the grid exposes aria-rowindex on each row.
+    this.rowHeaderEl.setAttribute('aria-hidden', 'true');
 
     // Scroll container (native scrollbar)
     this.scrollContainer = document.createElement('div');
@@ -357,13 +384,32 @@ export class DOMRenderer {
     }
   }
 
+  /** Full repaint: every visible cell's content is painted again. */
   scheduleRender(): void {
+    this.contentDirtyAll = true;
+    this.schedulePaint();
+  }
+
+  /**
+   * Light repaint (scroll, selection): positions and state are refreshed, but a
+   * cell's content is painted only when it shows a different cell than before
+   * or was invalidated.
+   */
+  schedulePaint(): void {
     if (this.needsRender) return;
     this.needsRender = true;
     this.rafId = requestAnimationFrame(() => {
       this.needsRender = false;
       this.render();
+      this.contentDirtyAll = false;
+      this.dirtyCells.clear();
     });
+  }
+
+  /** Repaint just these cells' content on the next frame. */
+  invalidateCells(cells: Iterable<{ row: number; col: number }>): void {
+    for (const c of cells) this.dirtyCells.add(c.row * DIRTY_STRIDE + c.col);
+    this.schedulePaint();
   }
 
   private render(): void {
@@ -428,12 +474,16 @@ export class DOMRenderer {
     for (const [rowIdx, pooled] of this.activeRows) {
       if (!visibleSet.has(rowIdx)) {
         pooled.el.style.display = 'none';
+        for (const cellEl of pooled.cells) this.unbindCell(cellEl);
         this.rowPool.push(pooled);
         this.activeRows.delete(rowIdx);
       }
     }
 
+    this.updateGridAria();
+
     // Render all needed rows
+    this.focusedCellEl = null;
     for (const r of visibleSet) {
       this.renderRow(r, vp, scrollY, frozenRows, frozenCols);
     }
@@ -510,6 +560,8 @@ export class DOMRenderer {
       }
     }
 
+    this.updateActiveDescendant();
+
     // Render headers
     if (showColHeaders) this.renderColHeaders(vp, scrollX);
     if (showRowHeaders) this.renderRowHeaders(vp, scrollY);
@@ -553,6 +605,7 @@ export class DOMRenderer {
     el.style.height = `${h}px`;
     el.style.zIndex = isFrozenRow ? '2' : '';
     el.dataset.row = String(dataRow);
+    el.setAttribute('aria-rowindex', String(this.ariaRowIndex(dataRow)));
 
     // Ensure correct number of cells
     this.ensureCells(pooled, colCount);
@@ -566,6 +619,7 @@ export class DOMRenderer {
       // Skip cells hidden by a merge
       if (merges.isHidden(dataRow, col)) {
         cellEl.style.display = 'none';
+        this.unbindCell(cellEl);
         continue;
       }
 
@@ -603,22 +657,42 @@ export class DOMRenderer {
     // Hide extra cells
     for (let ci = colCount; ci < pooled.cells.length; ci++) {
       pooled.cells[ci].style.display = 'none';
+      this.unbindCell(pooled.cells[ci]);
     }
   }
 
-  /** Cell content/state/style/renderer — shared by main rows and the frozen layer. */
-  private renderCellContent(cellEl: HTMLElement, dataRow: number, col: number): void {
+  /**
+   * Cell state, and content when needed — shared by main rows and the frozen
+   * layer. Content (style, class, renderer) is painted only when the element
+   * now shows a different cell, or that cell was invalidated.
+   */
+  private renderCellContent(el: HTMLElement, dataRow: number, col: number): void {
+    const cellEl = el as CellEl;
     const { data, selection } = this.ctx;
-    const cellData = data.getCell(dataRow, col);
-    const state: CellState = {
-      selected: selection.isSelected(dataRow, col),
-      focused: selection.isFocused(dataRow, col),
-      editing: false,
-      hover: false,
-    };
+    const selected = selection.isSelected(dataRow, col);
+    const focused = selection.isFocused(dataRow, col);
+    const bound = cellEl._wtRow === dataRow && cellEl._wtCol === col;
 
-    cellEl.classList.toggle('wt-cell--selected', state.selected);
-    cellEl.classList.toggle('wt-cell--focused', state.focused);
+    if (!bound || this.contentDirtyAll || this.dirtyCells.has(dataRow * DIRTY_STRIDE + col)) {
+      this.paintCellContent(cellEl, dataRow, col, data.getCell(dataRow, col), { selected, focused, editing: false, hover: false });
+    }
+
+    cellEl.classList.toggle('wt-cell--selected', selected);
+    cellEl.classList.toggle('wt-cell--focused', focused);
+    if (cellEl.getAttribute('aria-selected') !== (selected ? 'true' : 'false')) {
+      cellEl.setAttribute('aria-selected', selected ? 'true' : 'false');
+    }
+    if (focused) this.focusedCellEl = cellEl;
+  }
+
+  private paintCellContent(cellEl: CellEl, dataRow: number, col: number, cellData: CellData | undefined, state: CellState): void {
+    cellEl._wtRenderer?.cleanup?.(cellEl);
+    cellEl._wtRow = dataRow;
+    cellEl._wtCol = col;
+
+    // Reset the class every paint: a recycled element must not keep the
+    // previous cell's custom class.
+    cellEl.className = cellData?.className ? `wt-cell ${cellData.className}` : 'wt-cell';
 
     if (cellData?.style) {
       const cs = cellData.style;
@@ -639,12 +713,6 @@ export class DOMRenderer {
       cellEl.style.borderBottom = '';
     }
 
-    if (cellData?.className) {
-      cellEl.className = `wt-cell ${cellData.className}`;
-      if (state.selected) cellEl.classList.add('wt-cell--selected');
-      if (state.focused) cellEl.classList.add('wt-cell--focused');
-    }
-
     // Column alignment → flex justify (cells are flex; text-align alone does not
     // move a single content node). Per-cell style.textAlign still wins for text.
     const colAlign = this.ctx.columns.getConfig(col)?.align;
@@ -654,9 +722,59 @@ export class DOMRenderer {
       cellEl.style.textAlign = colAlign;
     }
 
+    cellEl.setAttribute('aria-colindex', String(this.ariaColIndex(col)));
+    const readOnly = cellData?.readOnly ?? this.ctx.columns.getConfig(col)?.readOnly;
+    if (readOnly) {
+      cellEl.setAttribute('aria-readonly', 'true');
+    } else {
+      cellEl.removeAttribute('aria-readonly');
+    }
+    const label = this.ctx.cellLabel?.(dataRow, col, cellData);
+    if (label) {
+      cellEl.setAttribute('aria-label', label);
+    } else {
+      cellEl.removeAttribute('aria-label');
+    }
+
     const type = cellData?.type ?? this.ctx.columns.getConfig(col)?.type ?? this.ctx.defaultCellType;
     const renderer = this.ctx.renderers.get(type) ?? this.ctx.defaultRenderer;
     renderer.render(cellEl, cellData, state);
+    cellEl._wtRenderer = renderer;
+  }
+
+  /** Forget what a hidden/recycled element showed, so it repaints when reused. */
+  private unbindCell(el: HTMLElement): void {
+    const cellEl = el as CellEl;
+    cellEl._wtRow = undefined;
+    cellEl._wtCol = undefined;
+  }
+
+  private focusedCellEl: HTMLElement | null = null;
+
+  private ariaRowIndex(dataRow: number): number {
+    return dataRow + 1 + (this.ctx.showColHeaders ? 1 : 0);
+  }
+
+  private ariaColIndex(col: number): number {
+    return col + 1;
+  }
+
+  private updateGridAria(): void {
+    const rowCount = String(this.ctx.data.rowCount + (this.ctx.showColHeaders ? 1 : 0));
+    const colCount = String(this.ctx.columns.count);
+    if (this.container.getAttribute('aria-rowcount') !== rowCount) this.container.setAttribute('aria-rowcount', rowCount);
+    if (this.container.getAttribute('aria-colcount') !== colCount) this.container.setAttribute('aria-colcount', colCount);
+  }
+
+  /** Point aria-activedescendant at the focused cell, if it is rendered. */
+  private updateActiveDescendant(): void {
+    const el = this.focusedCellEl;
+    if (el && el.isConnected && el.style.display !== 'none') {
+      if (!el.id) el.id = `wt${this.uid}-c${++this.cellSeq}`;
+      this.container.setAttribute('aria-activedescendant', el.id);
+    } else {
+      this.container.removeAttribute('aria-activedescendant');
+    }
   }
 
   /** Render the frozen columns into the sticky layer (pinned horizontally). */
@@ -680,6 +798,7 @@ export class DOMRenderer {
     for (const [rowIdx, pooled] of this.activeFrozenRows) {
       if (!visibleSet.has(rowIdx)) {
         pooled.el.style.display = 'none';
+        for (const cellEl of pooled.cells) this.unbindCell(cellEl);
         this.frozenRowPool.push(pooled);
         this.activeFrozenRows.delete(rowIdx);
       }
@@ -705,12 +824,14 @@ export class DOMRenderer {
       el.style.height = `${h}px`;
       el.style.zIndex = isFrozenRow ? '2' : '';
       el.dataset.row = String(dataRow);
+      el.setAttribute('aria-rowindex', String(this.ariaRowIndex(dataRow)));
 
       this.ensureFrozenCells(pooled, frozenCols);
       for (let col = 0; col < frozenCols; col++) {
         const cellEl = pooled.cells[col];
         if (merges.isHidden(dataRow, col)) {
           cellEl.style.display = 'none';
+          this.unbindCell(cellEl);
           continue;
         }
         cellEl.style.transform = `translateX(${columns.getX(col)}px)`;
@@ -733,6 +854,7 @@ export class DOMRenderer {
     if (!pooled) {
       const el = document.createElement('div');
       el.className = 'wt-row wt-frozen-row';
+      el.setAttribute('role', 'row');
       this.frozenLayer.appendChild(el);
       pooled = { el, cells: [], rowIndex: -1 };
     }
@@ -744,6 +866,7 @@ export class DOMRenderer {
     while (pooled.cells.length < count) {
       const cell = document.createElement('div');
       cell.className = 'wt-cell';
+      cell.setAttribute('role', 'gridcell');
       pooled.el.appendChild(cell);
       pooled.cells.push(cell);
     }
@@ -854,6 +977,8 @@ export class DOMRenderer {
     cell.style.transform = `translateX(${columns.getX(col)}px)`;
     cell.style.width = `${columns.getWidth(col)}px`;
     cell.style.height = `${headerH}px`;
+    cell.setAttribute('role', 'columnheader');
+    cell.setAttribute('aria-colindex', String(this.ariaColIndex(col)));
     cell.textContent = columns.getConfig(col)?.label ?? CM.columnLabel(col);
     // Sort indicator: show a subtle arrow on the column that currently drives the
     // order. Setting textContent above already cleared it from every other column.
@@ -883,6 +1008,8 @@ export class DOMRenderer {
   private createColHeadersInner(): HTMLElement {
     const div = document.createElement('div');
     div.className = 'wt-col-headers-inner';
+    div.setAttribute('role', 'row');
+    div.setAttribute('aria-rowindex', '1');
     this.colHeaderEl.appendChild(div);
     return div;
   }
@@ -936,6 +1063,7 @@ export class DOMRenderer {
     if (!pooled) {
       const el = document.createElement('div');
       el.className = 'wt-row';
+      el.setAttribute('role', 'row');
       this.viewportEl.appendChild(el);
       pooled = { el, cells: [], rowIndex: -1 };
     }
@@ -947,6 +1075,7 @@ export class DOMRenderer {
     while (pooled.cells.length < count) {
       const cell = document.createElement('div');
       cell.className = 'wt-cell';
+      cell.setAttribute('role', 'gridcell');
       pooled.el.appendChild(cell);
       pooled.cells.push(cell);
     }
@@ -1022,9 +1151,13 @@ export class DOMRenderer {
     // per-frame JS repositioning is needed — just re-render the virtualized
     // viewport. The header scrollLeft is synced here so it tracks immediately.
     if (this.ctx.showColHeaders) {
-      this.colHeaderEl.scrollLeft = this.scrollContainer.scrollLeft;
+      const x = this.scrollContainer.scrollLeft;
+      if (this.lastHeaderScrollX !== x) {
+        this.colHeaderEl.scrollLeft = x;
+        this.lastHeaderScrollX = x;
+      }
     }
-    this.scheduleRender();
+    this.schedulePaint();
   };
 
   private handleMouseDown = (e: MouseEvent): void => {

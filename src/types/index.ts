@@ -164,7 +164,13 @@ export interface ThemeConfig {
 // ── Renderer ──
 
 export interface CellRenderer {
+  /**
+   * Paint a cell's content. Called when the element starts showing a cell or
+   * that cell's data was invalidated; selection/focus changes alone only
+   * toggle the wt-cell--selected / wt-cell--focused classes.
+   */
   render(cell: HTMLElement, data: CellData | undefined, state: CellState): void;
+  /** Called before the element is painted again (same or another cell). */
   cleanup?(cell: HTMLElement): void;
 }
 
@@ -257,6 +263,8 @@ export interface WanderTableOptions {
    * included) and the host calls invalidate()/setSize() after changing it.
    */
   source?: CellSource;
+  /** Accessible name per cell (aria-label), e.g. reference + field name. */
+  cellLabel?: (row: number, col: number, data: CellData | undefined) => string | null | undefined;
   colCount?: number;
   defaultRowHeight?: number;
   defaultColWidth?: number;

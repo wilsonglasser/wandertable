@@ -195,6 +195,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
       preset: options.preset,
       layout: options.layout ?? 'scroll',
       headerRows: this.headerRows.length > 0 ? this.headerRows : undefined,
+      cellLabel: options.cellLabel,
     });
 
     // AutoFit (needs renderer to be initialized)
@@ -372,8 +373,17 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
 
   private wireCallbacks(): void {
     // Data changes trigger re-render
-    this.data.onChange = () => {
-      this.renderer.scheduleRender();
+    this.data.onChange = (dirty) => {
+      if (dirty.size === 0) {
+        this.renderer.scheduleRender();
+        return;
+      }
+      const cells: { row: number; col: number }[] = [];
+      for (const key of dirty) {
+        const sep = key.indexOf(':');
+        cells.push({ row: Number(key.slice(0, sep)), col: Number(key.slice(sep + 1)) });
+      }
+      this.renderer.invalidateCells(cells);
     };
 
     // Selection changes trigger re-render + infinite expansion
@@ -381,7 +391,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
       if (this.options.infinite && this.selection.focus) {
         this.expandIfNeeded(this.selection.focus.row, this.selection.focus.col);
       }
-      this.renderer.scheduleRender();
+      this.renderer.schedulePaint();
       this.fillHandle.updatePosition();
       this.emit('selection:change', { ranges: this.selection.ranges });
       this.options.onSelectionChange?.(this.selection.ranges);
@@ -1017,11 +1027,15 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
   }
 
   /**
-   * Repaint after the host changed cells in an external source. Cheap to call
-   * many times per frame: paints coalesce into one animation frame.
+   * Repaint after the host changed cells in an external source: just `cells`,
+   * or every visible cell when omitted. Calls coalesce into one animation frame.
    */
-  invalidate(): void {
-    this.renderer.scheduleRender();
+  invalidate(cells?: Iterable<{ row: number; col: number }>): void {
+    if (cells) {
+      this.renderer.invalidateCells(cells);
+    } else {
+      this.renderer.scheduleRender();
+    }
   }
 
   /** Resize the grid to an external source's new dimensions. */
