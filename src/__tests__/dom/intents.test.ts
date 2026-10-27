@@ -328,3 +328,21 @@ describe('right-click', () => {
     host.remove();
   });
 });
+
+describe('double-click takeover', () => {
+  it('a dblclick listener can keep the editor shut', async () => {
+    stubLayout();
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const table = new WanderTable(host, { rowCount: 10, colCount: 3 });
+    await frame();
+    let seen = 0;
+    table.on('cell:dblclick', (e) => { seen++; e.preventDefault(); });
+    const cell = host.querySelector<HTMLElement>('.wt-cell[data-row="1"][data-col="1"]')!;
+    cell.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(seen).toBe(1);
+    expect(host.querySelector('input.wt-editor-input')).toBeNull();
+    table.destroy();
+    host.remove();
+  });
+});

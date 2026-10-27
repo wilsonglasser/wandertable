@@ -482,7 +482,11 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
 
     // Double click -> edit
     this.renderer.onCellDblClick = (row, col, e) => {
-      this.emit('cell:dblclick', { row, col, event: e });
+      // Listeners may take over the double-click (e.g. open their own UI on an
+      // empty cell) by calling preventDefault(): the cell editor then stays shut.
+      let prevented = false;
+      this.emit('cell:dblclick', { row, col, event: e, preventDefault: () => { prevented = true; } });
+      if (prevented) return;
       if (!this.options.readOnly && this.options.allowEditing !== false) {
         this.startEditing(row, col);
       }

@@ -259,7 +259,8 @@ export interface WanderTableEvents {
   'intent': GridIntent;
   'cell:change': { row: number; col: number; oldValue: unknown; newValue: unknown };
   'cell:click': { row: number; col: number; event: MouseEvent };
-  'cell:dblclick': { row: number; col: number; event: MouseEvent };
+  /** Call preventDefault() to keep the cell editor from opening. */
+  'cell:dblclick': { row: number; col: number; event: MouseEvent; preventDefault: () => void };
   'cell:contextmenu': { row: number; col: number; event: MouseEvent };
   'selection:change': { ranges: SelectionRange[] };
   'editor:open': { row: number; col: number };
