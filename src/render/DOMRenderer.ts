@@ -1,5 +1,4 @@
-import type { CellRenderer, CellState, ThemeConfig, Viewport } from '../types/index.js';
-import type { DataModel } from '../core/DataModel.js';
+import type { CellRenderer, CellSource, CellState, ThemeConfig, Viewport } from '../types/index.js';
 import type { ColumnModel } from '../columns/ColumnModel.js';
 import type { RowModel } from '../rows/RowModel.js';
 import type { SelectionModel } from '../core/SelectionModel.js';
@@ -16,7 +15,7 @@ import { computeAutoRowHeight } from './autoRowHeight.js';
 const AUTO_SCROLLBAR_PAD = 16;
 
 interface RendererContext {
-  data: DataModel;
+  data: CellSource;
   columns: ColumnModel;
   rows: RowModel;
   selection: SelectionModel;

@@ -1,7 +1,11 @@
-import type { CellData, CellKey, CellPatch } from '../types/index.js';
+import type { CellData, CellKey, CellPatch, CellSource } from '../types/index.js';
 
-export class DataModel {
-  private cells = new Map<CellKey, CellData>();
+/** Column stride of the numeric cell index: row * COL_STRIDE + col. */
+const COL_STRIDE = 65536;
+
+export class DataModel implements CellSource {
+  /** Keyed by row * COL_STRIDE + col, so reads allocate nothing. */
+  private cells = new Map<number, CellData>();
   private _rowCount: number;
   private _colCount: number;
   private _inTransaction = false;
@@ -21,52 +25,54 @@ export class DataModel {
   get colCount(): number { return this._colCount; }
   set colCount(v: number) { this._colCount = v; }
 
-  private key(row: number, col: number): CellKey {
+  private index(row: number, col: number): number {
+    return row * COL_STRIDE + col;
+  }
+
+  private dirtyKey(row: number, col: number): CellKey {
     return `${row}:${col}`;
   }
 
   getCell(row: number, col: number): CellData | undefined {
-    return this.cells.get(this.key(row, col));
+    return this.cells.get(this.index(row, col));
   }
 
   setCell(row: number, col: number, data: CellData): void {
-    const k = this.key(row, col);
-    this.cells.set(k, data);
-    this.markDirty(k);
+    this.cells.set(this.index(row, col), data);
+    this.markDirty(this.dirtyKey(row, col));
   }
 
   setCellValue(row: number, col: number, value: unknown): void {
-    const k = this.key(row, col);
-    const existing = this.cells.get(k);
+    const i = this.index(row, col);
+    const existing = this.cells.get(i);
     if (existing) {
       existing.value = value;
     } else {
-      this.cells.set(k, { value });
+      this.cells.set(i, { value });
     }
-    this.markDirty(k);
+    this.markDirty(this.dirtyKey(row, col));
   }
 
   deleteCell(row: number, col: number): void {
-    const k = this.key(row, col);
-    this.cells.delete(k);
-    this.markDirty(k);
+    this.cells.delete(this.index(row, col));
+    this.markDirty(this.dirtyKey(row, col));
   }
 
   hasCell(row: number, col: number): boolean {
-    return this.cells.has(this.key(row, col));
+    return this.cells.has(this.index(row, col));
   }
 
   applyPatch(patches: CellPatch[]): void {
     this.transaction(() => {
       for (const p of patches) {
-        const k = this.key(p.row, p.col);
-        const existing = this.cells.get(k);
+        const i = this.index(p.row, p.col);
+        const existing = this.cells.get(i);
         if (existing) {
           Object.assign(existing, p.data);
         } else {
-          this.cells.set(k, { value: undefined, ...p.data });
+          this.cells.set(i, { value: undefined, ...p.data });
         }
-        this._dirtyKeys.add(k);
+        this._dirtyKeys.add(this.dirtyKey(p.row, p.col));
       }
     });
   }
@@ -104,9 +110,8 @@ export class DataModel {
 
   /** Iterate all cells that have data */
   forEach(fn: (row: number, col: number, data: CellData) => void): void {
-    for (const [key, data] of this.cells) {
-      const [r, c] = key.split(':').map(Number);
-      fn(r, c, data);
+    for (const [i, data] of this.cells) {
+      fn(Math.floor(i / COL_STRIDE), i % COL_STRIDE, data);
     }
   }
 }

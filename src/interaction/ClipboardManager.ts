@@ -1,15 +1,18 @@
 import type { DataModel } from '../core/DataModel.js';
 import type { SelectionModel } from '../core/SelectionModel.js';
-import type { CellPatch } from '../types/index.js';
+import type { CellPatch, CellSource } from '../types/index.js';
 
 export class ClipboardManager {
   private data: DataModel;
   private selection: SelectionModel;
+  /** Reads (copy) go through the grid's cell source. */
+  private source: CellSource;
 
   onChange: ((patches: CellPatch[]) => void) | null = null;
 
-  constructor(data: DataModel, selection: SelectionModel) {
+  constructor(data: DataModel, selection: SelectionModel, source: CellSource = data) {
     this.data = data;
+    this.source = source;
     this.selection = selection;
   }
 
@@ -107,7 +110,7 @@ export class ClipboardManager {
     for (let r = bounds.r1; r <= bounds.r2; r++) {
       const cols: string[] = [];
       for (let c = bounds.c1; c <= bounds.c2; c++) {
-        const cell = this.data.getCell(r, c);
+        const cell = this.source.getCell(r, c);
         const val = cell?.value;
         cols.push(val != null ? String(val) : '');
       }

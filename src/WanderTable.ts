@@ -9,6 +9,7 @@ import type {
   Viewport,
   WanderTableEvents,
   WanderTableOptions,
+  CellSource,
 } from './types/index.js';
 import { DEFAULT_THEME } from './types/index.js';
 import { DataModel } from './core/DataModel.js';
@@ -39,6 +40,8 @@ import { exportCSV, exportJSON, downloadFile, type ExportOptions } from './plugi
 
 export class WanderTable extends EventEmitter<WanderTableEvents> {
   readonly data: DataModel;
+  /** Where every cell read goes: options.source, or the built-in DataModel. */
+  readonly source: CellSource;
   readonly selection: SelectionModel;
   readonly columns: ColumnModel;
   readonly rows: RowModel;
@@ -88,10 +91,12 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
     }
 
     // Determine dimensions
-    const colCount = options.colCount ?? (flatColumns.length || 26);
+    const colCount = options.source?.colCount ?? options.colCount ?? (flatColumns.length || 26);
     let rowCount: number;
 
-    if (options.mode === 'table' && options.tableData) {
+    if (options.source) {
+      rowCount = options.source.rowCount;
+    } else if (options.mode === 'table' && options.tableData) {
       rowCount = options.tableData.length;
     } else {
       rowCount = options.rowCount ?? 100;
@@ -102,12 +107,13 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
 
     // Models
     this.data = new DataModel(rowCount, colCount);
+    this.source = options.source ?? this.data;
     this.selection = new SelectionModel(rowCount, colCount);
     if (options.infinite) this.selection.infinite = true;
     this.columns = new ColumnModel(colCount, defaultColWidth, flatColumns);
     this.rows = new RowModel(rowCount, defaultRowHeight);
     this.commands = new CommandBus(options.undoLimit ?? 100);
-    this.viewMapping = new ViewMapping(this.data);
+    this.viewMapping = new ViewMapping(this.source);
     this.merges = new MergeModel();
     this.pagination = new PaginationModel(options.pagination);
     this.rowGroups = new RowGroupModel(
@@ -138,12 +144,12 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
     this.contextMenu = new ContextMenu();
 
     // Clipboard
-    this.clipboard = new ClipboardManager(this.data, this.selection);
+    this.clipboard = new ClipboardManager(this.data, this.selection, this.source);
 
     // Fill handle (inside viewport so position: absolute works correctly)
     this.fillHandle = new FillHandle(
       this.renderer.getViewportEl(),
-      this.data,
+      this.source,
       this.selection,
       this.columns,
       this.rows,
@@ -168,7 +174,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
 
     // Initialize renderer
     this.renderer.init({
-      data: this.data,
+      data: this.source,
       columns: this.columns,
       rows: this.rows,
       selection: this.selection,
@@ -194,7 +200,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
     // AutoFit (needs renderer to be initialized)
     this.autoFit = new AutoFit(
       container,
-      this.data,
+      this.source,
       this.columns,
       this.rows,
       this.rendererRegistry.getAll(),
@@ -737,7 +743,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
   }
 
   getCell(row: number, col: number): CellData | undefined {
-    return this.data.getCell(row, col);
+    return this.source.getCell(row, col);
   }
 
   setCellValue(row: number, col: number, value: unknown): void {
@@ -1006,6 +1012,26 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
   }
 
   refresh(): void {
+    this.renderer.updateLayout();
+    this.renderer.scheduleRender();
+  }
+
+  /**
+   * Repaint after the host changed cells in an external source. Cheap to call
+   * many times per frame: paints coalesce into one animation frame.
+   */
+  invalidate(): void {
+    this.renderer.scheduleRender();
+  }
+
+  /** Resize the grid to an external source's new dimensions. */
+  setSize(rowCount: number, colCount: number): void {
+    this.data.rowCount = rowCount;
+    this.data.colCount = colCount;
+    this.rows.setCount(rowCount);
+    this.columns.setCount(colCount);
+    this.selection.setDimensions(rowCount, colCount);
+    this.viewMapping.rebuild();
     this.renderer.updateLayout();
     this.renderer.scheduleRender();
   }

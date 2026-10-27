@@ -1,5 +1,4 @@
-import type { CellRenderer, CellState } from '../types/index.js';
-import type { DataModel } from '../core/DataModel.js';
+import type { CellRenderer, CellSource, CellState } from '../types/index.js';
 import type { ColumnModel } from '../columns/ColumnModel.js';
 import type { RowModel } from '../rows/RowModel.js';
 import { columnLabel } from '../columns/ColumnModel.js';
@@ -8,14 +7,14 @@ const DEFAULT_STATE: CellState = { selected: false, focused: false, editing: fal
 
 export class AutoFit {
   private measureEl: HTMLElement;
-  private data: DataModel;
+  private data: CellSource;
   private columns: ColumnModel;
   private renderers: Map<string, CellRenderer>;
   private defaultRenderer: CellRenderer;
 
   constructor(
     container: HTMLElement,
-    data: DataModel,
+    data: CellSource,
     columns: ColumnModel,
     _rows: RowModel,
     renderers: Map<string, CellRenderer>,

@@ -231,6 +231,19 @@ export interface PaginationState {
   endRow: number;
 }
 
+/**
+ * Read-only view of cell data. The grid reads every cell through this, so a
+ * host can keep its own document as the single source of truth instead of
+ * copying it into the built-in DataModel. Lookups must be cheap: they run for
+ * every visible cell on every paint.
+ */
+export interface CellSource {
+  readonly rowCount: number;
+  readonly colCount: number;
+  getCell(row: number, col: number): CellData | undefined;
+  hasCell(row: number, col: number): boolean;
+}
+
 export interface WanderTableOptions {
   /** 'spreadsheet' = independent cells (default), 'table' = column-driven rows */
   mode?: 'spreadsheet' | 'table';
@@ -239,6 +252,11 @@ export interface WanderTableOptions {
   tableData?: Record<string, unknown>[];
   columns?: ColumnConfig[];
   rowCount?: number;
+  /**
+   * External cell data. When set, the grid reads from it (rowCount/colCount
+   * included) and the host calls invalidate()/setSize() after changing it.
+   */
+  source?: CellSource;
   colCount?: number;
   defaultRowHeight?: number;
   defaultColWidth?: number;

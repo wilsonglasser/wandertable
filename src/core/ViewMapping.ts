@@ -1,4 +1,4 @@
-import type { DataModel } from './DataModel.js';
+import type { CellSource } from '../types/index.js';
 
 export type SortDirection = 'asc' | 'desc' | null;
 
@@ -8,7 +8,7 @@ export interface SortState {
   compareFn?: (a: unknown, b: unknown) => number;
 }
 
-export type FilterFn = (row: number, data: DataModel) => boolean;
+export type FilterFn = (row: number, data: CellSource) => boolean;
 
 /**
  * Maps visual row indices to actual data row indices.
@@ -21,11 +21,11 @@ export class ViewMapping {
 
   private sortState: SortState | null = null;
   private filters = new Map<number, FilterFn>();
-  private data: DataModel;
+  private data: CellSource;
 
   onChange: (() => void) | null = null;
 
-  constructor(data: DataModel) {
+  constructor(data: CellSource) {
     this.data = data;
     this.rebuild();
   }

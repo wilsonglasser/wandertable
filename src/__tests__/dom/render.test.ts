@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { WanderTable } from '../../WanderTable.js';
+import type { CellData, CellSource } from '../../types/index.js';
 
 const VIEW_W = 800;
 const VIEW_H = 400;
@@ -103,5 +104,71 @@ describe('DOMRenderer (virtualized, scroll layout)', () => {
     expect(anchor.style.width).toBe('300px');
     expect(anchor.style.height).toBe(`${ROW_H * 2}px`);
     expect(cellAt(host, 1, 2)).toBeUndefined();
+  });
+});
+
+describe('external CellSource', () => {
+  /** Host-owned document: one string per cell, no CellData copies kept by the grid. */
+  class HostDoc implements CellSource {
+    rowCount = 3000;
+    colCount = 10;
+    values = new Map<number, string>();
+    reads = 0;
+    getCell(row: number, col: number): CellData | undefined {
+      this.reads++;
+      const v = this.values.get(row * 1000 + col);
+      return v === undefined ? undefined : { value: v };
+    }
+    hasCell(row: number, col: number): boolean {
+      return this.values.has(row * 1000 + col);
+    }
+  }
+
+  let host: HTMLElement;
+  let doc: HostDoc;
+  let table: WanderTable;
+
+  beforeEach(async () => {
+    stubLayout();
+    host = document.createElement('div');
+    document.body.appendChild(host);
+    doc = new HostDoc();
+    for (let r = 0; r < 3000; r++) {
+      doc.values.set(r * 1000, `doc ${r}`);
+    }
+    table = new WanderTable(host, { source: doc, defaultRowHeight: ROW_H, defaultColWidth: 100 });
+    await frame();
+  });
+
+  afterEach(() => {
+    table.destroy();
+    host.remove();
+  });
+
+  it('paints from the source without copying it into the DataModel', () => {
+    expect(cellAt(host, 0, 0)?.textContent).toBe('doc 0');
+    expect(table.getCell(2999, 0)?.value).toBe('doc 2999');
+    let copied = 0;
+    table.data.forEach(() => copied++);
+    expect(copied).toBe(0);
+    expect(doc.reads).toBeGreaterThan(0);
+  });
+
+  it('repaints host mutations on invalidate()', async () => {
+    doc.values.set(1 * 1000 + 2, 'edited by host');
+    table.invalidate();
+    await frame();
+    expect(cellAt(host, 1, 2)?.textContent).toBe('edited by host');
+  });
+
+  it('grows to the new size on setSize()', async () => {
+    doc.rowCount = 4000;
+    doc.values.set(3999 * 1000, 'last');
+    table.setSize(4000, 10);
+    const sc = host.querySelector<HTMLElement>('.wt-scroll-container')!;
+    sc.scrollTop = ROW_H * 3990;
+    sc.dispatchEvent(new Event('scroll'));
+    await frame();
+    expect(cellAt(host, 3999, 0)?.textContent).toBe('last');
   });
 });

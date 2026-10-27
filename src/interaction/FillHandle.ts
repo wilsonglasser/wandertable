@@ -1,5 +1,4 @@
-import type { CellPatch, SelectionRange } from '../types/index.js';
-import type { DataModel } from '../core/DataModel.js';
+import type { CellPatch, CellSource, SelectionRange } from '../types/index.js';
 import type { SelectionModel } from '../core/SelectionModel.js';
 import type { ColumnModel } from '../columns/ColumnModel.js';
 import type { RowModel } from '../rows/RowModel.js';
@@ -18,7 +17,7 @@ export class FillHandle {
   private dragging = false;
   private currentRow = -1;
   private currentCol = -1;
-  private data: DataModel;
+  private data: CellSource;
   private selection: SelectionModel;
 
   getCellAtPoint: ((x: number, y: number) => { row: number; col: number } | null) | null = null;
@@ -29,7 +28,7 @@ export class FillHandle {
 
   constructor(
     container: HTMLElement,
-    data: DataModel,
+    data: CellSource,
     selection: SelectionModel,
     _columns: ColumnModel,
     _rows: RowModel,
