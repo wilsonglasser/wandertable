@@ -750,12 +750,18 @@ export class DOMRenderer {
     }
   }
 
+  private lastHeaderScrollX = -1;
+
   private renderColHeaders(vp: Viewport, scrollX: number): void {
     const { columns, theme } = this.ctx;
     const headerRows = this.ctx.headerRows;
 
-    // Sync scroll with data area
-    this.colHeaderEl.scrollLeft = scrollX;
+    // Sync scroll with data area. Writing scrollLeft forces a synchronous
+    // layout, so only touch it when the horizontal offset actually changed.
+    if (this.lastHeaderScrollX !== scrollX) {
+      this.colHeaderEl.scrollLeft = scrollX;
+      this.lastHeaderScrollX = scrollX;
+    }
 
     const innerDiv = this.colHeaderEl.querySelector('.wt-col-headers-inner') as HTMLElement
       ?? this.createColHeadersInner();
@@ -882,16 +888,24 @@ export class DOMRenderer {
     return div;
   }
 
+  private lastRowHeaderOffsetY = -1;
+
   private renderRowHeaders(vp: Viewport, scrollY: number): void {
     const { rows, theme } = this.ctx;
-
-    this.rowHeaderEl.scrollTop = scrollY;
 
     let innerDiv = this.rowHeaderEl.querySelector('.wt-row-headers-inner') as HTMLElement;
     if (!innerDiv) {
       innerDiv = document.createElement('div');
       innerDiv.className = 'wt-row-headers-inner';
       this.rowHeaderEl.appendChild(innerDiv);
+    }
+
+    // Follow the body with a compositor transform instead of scrollTop:
+    // writing scrollTop every frame forces a synchronous layout.
+    const offsetY = this.ctx.layout === 'auto' ? 0 : scrollY;
+    if (this.lastRowHeaderOffsetY !== offsetY) {
+      innerDiv.style.transform = offsetY ? `translateY(${-offsetY}px)` : '';
+      this.lastRowHeaderOffsetY = offsetY;
     }
     innerDiv.style.height = `${rows.getTotalHeight()}px`;
 
