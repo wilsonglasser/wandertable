@@ -275,3 +275,38 @@ describe('type to replace', () => {
     host.remove();
   });
 });
+
+describe('getSelection', () => {
+  it('returns whole-row and whole-column selections clamped to the grid', async () => {
+    stubLayout();
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const table = new WanderTable(host, { rowCount: 30, colCount: 6 });
+    await frame();
+    table.selection.selectRow(4);
+    expect(table.getSelection()).toEqual([{ startRow: 4, startCol: 0, endRow: 4, endCol: 5 }]);
+    table.selection.selectColumn(2);
+    expect(table.getSelection()).toEqual([{ startRow: 0, startCol: 2, endRow: 29, endCol: 2 }]);
+    table.selection.selectAll();
+    expect(table.getSelection()).toEqual([{ startRow: 0, startCol: 0, endRow: 29, endCol: 5 }]);
+    table.destroy();
+    host.remove();
+  });
+});
+
+describe('whole-row clear', () => {
+  it('Delete on a selected row sends a clamped range', async () => {
+    stubLayout();
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const doc = new HostDoc();
+    const intents: GridIntent[] = [];
+    const table = new WanderTable(host, { source: doc, onIntent: (i) => intents.push(i) });
+    await frame();
+    table.selection.selectRow(3);
+    key(host, 'Delete');
+    expect(intents[0]).toEqual({ type: 'clear', ranges: [{ startRow: 3, startCol: 0, endRow: 3, endCol: 7 }], cut: false });
+    table.destroy();
+    host.remove();
+  });
+});

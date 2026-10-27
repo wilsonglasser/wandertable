@@ -417,8 +417,8 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
       }
       this.renderer.schedulePaint();
       this.fillHandle.updatePosition();
-      this.emit('selection:change', { ranges: this.selection.ranges });
-      this.options.onSelectionChange?.(this.selection.ranges);
+      this.emit('selection:change', { ranges: this.getSelection() });
+      this.options.onSelectionChange?.(this.getSelection());
     };
 
     // Cell click
@@ -834,8 +834,21 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
     }
   }
 
+  /**
+   * Selected ranges, clamped to the grid. Whole rows/columns/all are kept as
+   * Infinity inside the SelectionModel; hosts get real indexes so a loop over
+   * the range always ends.
+   */
   getSelection(): SelectionRange[] {
-    return [...this.selection.ranges];
+    const maxRow = Math.max(0, this.selection.rowCount - 1);
+    const maxCol = Math.max(0, this.selection.colCount - 1);
+    const clamp = (v: number, max: number) => (Number.isFinite(v) ? Math.min(v, max) : max);
+    return this.selection.ranges.map((r) => ({
+      startRow: clamp(r.startRow, maxRow),
+      startCol: clamp(r.startCol, maxCol),
+      endRow: clamp(r.endRow, maxRow),
+      endCol: clamp(r.endCol, maxCol),
+    }));
   }
 
   getSelectionInfo() {
@@ -1233,7 +1246,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
 
   private deleteSelected(): void {
     if (this.options.readOnly || this.selection.ranges.length === 0) return;
-    this.commit({ type: 'clear', ranges: [...this.selection.ranges], cut: false });
+    this.commit({ type: 'clear', ranges: this.getSelection(), cut: false });
   }
 
   /**
@@ -1275,7 +1288,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
   private handleCutEvent = (e: ClipboardEvent): void => {
     if (this.editorManager.isEditing || this.options.allowClipboard === false) return;
     if (this.clipboard.writeEvent(e) && !this.options.readOnly) {
-      this.commit({ type: 'clear', ranges: [...this.selection.ranges], cut: true });
+      this.commit({ type: 'clear', ranges: this.getSelection(), cut: true });
     }
   };
 
