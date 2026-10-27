@@ -232,3 +232,26 @@ describe('labels', () => {
     host.remove();
   });
 });
+
+describe('editor choice', () => {
+  it('a custom cell type without its own editor edits as text', async () => {
+    stubLayout();
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const doc = new HostDoc();
+    doc.cells.set('0:0', { value: 'old', type: 'custom-kind' });
+    const intents: GridIntent[] = [];
+    const table = new WanderTable(host, { source: doc, onIntent: (i) => intents.push(i) });
+    table.registerRenderer('custom-kind', { render(el, data) { el.textContent = String(data?.value ?? ''); } });
+    await frame();
+    table.setSelection([{ startRow: 0, startCol: 0, endRow: 0, endCol: 0 }]);
+    key(host, 'F2');
+    const input = host.querySelector('input')!;
+    expect(input).toBeTruthy();
+    input.value = 'new';
+    key(input, 'Enter');
+    expect(intents).toContainEqual({ type: 'edit', row: 0, col: 0, value: 'new', previous: 'old' });
+    table.destroy();
+    host.remove();
+  });
+});

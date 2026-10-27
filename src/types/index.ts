@@ -19,6 +19,8 @@ export interface CellData {
   value: unknown;
   meta?: Record<string, unknown>;
   type?: string;
+  /** Editor for this cell (overrides the column's and the type's). */
+  editor?: string;
   readOnly?: boolean;
   className?: string;
   style?: CellStyle;

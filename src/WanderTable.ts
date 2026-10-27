@@ -1139,7 +1139,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
 
     const defaultType = this.options.defaultCellType ?? 'text';
     const cellType = cellData?.type ?? colConfig?.type ?? defaultType;
-    const editorType = colConfig?.editor ?? cellType;
+    const editorType = cellData?.editor ?? colConfig?.editor ?? cellType;
 
     // Blank cells: emit event but don't open editor
     if (editorType === 'blank') {

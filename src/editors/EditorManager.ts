@@ -49,7 +49,8 @@ export class EditorManager {
   ): void {
     this.close(false);
 
-    const factory = this.editors.get(editorType);
+    // A type with a custom renderer but no editor of its own edits as text.
+    const factory = this.editors.get(editorType) ?? this.editors.get('text');
     if (!factory) return;
 
     this.activeRow = row;
