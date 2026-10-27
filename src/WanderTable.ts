@@ -426,6 +426,10 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
       if (this.contextMenu.isOpen) {
         this.contextMenu.close();
       }
+      // Right-click inside the selection keeps it: the context menu acts on it.
+      if (e.button === 2 && this.selection.isSelected(row, col)) {
+        return;
+      }
       if (this.editorManager.isEditing) {
         this.editorManager.close(true);
       }

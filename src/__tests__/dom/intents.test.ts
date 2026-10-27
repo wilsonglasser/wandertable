@@ -310,3 +310,21 @@ describe('whole-row clear', () => {
     host.remove();
   });
 });
+
+describe('right-click', () => {
+  it('keeps the selection when it lands inside it, and moves it when outside', async () => {
+    stubLayout();
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const table = new WanderTable(host, { rowCount: 20, colCount: 5 });
+    await frame();
+    table.setSelection([{ startRow: 1, startCol: 1, endRow: 3, endCol: 2 }]);
+    const cell = (r: number, c: number) => [...host.querySelectorAll<HTMLElement>('.wt-cell')].find((el) => el.dataset.row === String(r) && el.dataset.col === String(c))!;
+    cell(2, 2).dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 2 }));
+    expect(table.getSelection()).toEqual([{ startRow: 1, startCol: 1, endRow: 3, endCol: 2 }]);
+    cell(8, 4).dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 2 }));
+    expect(table.getSelection()).toEqual([{ startRow: 8, startCol: 4, endRow: 8, endCol: 4 }]);
+    table.destroy();
+    host.remove();
+  });
+});
