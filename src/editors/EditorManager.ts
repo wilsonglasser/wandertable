@@ -68,7 +68,7 @@ export class EditorManager {
 
     // If initialChar is provided, start with that character instead of the current value
     const openValue = initialChar !== undefined ? initialChar : value;
-    this.activeEditor.open(openValue, bounds, cellData);
+    this.activeEditor.open(openValue, bounds, cellData, initialChar === undefined);
 
     // Handle key events on the editor
     this.activeEditorEl.addEventListener('keydown', this.handleEditorKey);
@@ -159,12 +159,18 @@ class TextEditorImpl implements CellEditor {
     return this.input;
   }
 
-  open(value: unknown, _bounds: CellBounds, _cellData: CellData | undefined): void {
+  open(value: unknown, _bounds: CellBounds, _cellData: CellData | undefined, selectAll = true): void {
     this.input.value = value != null ? String(value) : '';
-    requestAnimationFrame(() => {
-      this.input.focus();
+    // Focus now, not on the next frame: keys typed in between would land on the
+    // grid. Typing into a cell starts with that character and the caret after
+    // it; selecting it would let the next key replace it.
+    this.input.focus();
+    if (selectAll) {
       this.input.select();
-    });
+    } else {
+      const end = this.input.value.length;
+      this.input.setSelectionRange(end, end);
+    }
   }
 
   getValue(): unknown {

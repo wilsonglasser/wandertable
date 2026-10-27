@@ -180,7 +180,8 @@ export interface CellRenderer {
 
 export interface CellEditor {
   createElement(container: HTMLElement): HTMLElement;
-  open(value: unknown, bounds: CellBounds, cellData: CellData | undefined): void;
+  /** selectAll is false when the edit started by typing a character (keep the caret after it). */
+  open(value: unknown, bounds: CellBounds, cellData: CellData | undefined, selectAll?: boolean): void;
   getValue(): unknown;
   close(): void;
   validate?(value: unknown): boolean | string;

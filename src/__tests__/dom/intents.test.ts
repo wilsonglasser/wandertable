@@ -255,3 +255,23 @@ describe('editor choice', () => {
     host.remove();
   });
 });
+
+describe('type to replace', () => {
+  it('focuses the editor at once and keeps the first typed character', async () => {
+    stubLayout();
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const table = new WanderTable(host, { rowCount: 10, colCount: 3 });
+    table.setCell(0, 0, { value: 'old' });
+    await frame();
+    table.setSelection([{ startRow: 0, startCol: 0, endRow: 0, endCol: 0 }]);
+    key(host, 'v');
+    const input = host.querySelector('input')!;
+    expect(document.activeElement).toBe(input);
+    expect(input.value).toBe('v');
+    expect(input.selectionStart).toBe(1);
+    expect(input.selectionEnd).toBe(1);
+    table.destroy();
+    host.remove();
+  });
+});
