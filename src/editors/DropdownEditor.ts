@@ -57,9 +57,9 @@ export class DropdownEditor implements CellEditor {
 
     requestAnimationFrame(() => {
       if (this.searchInput) {
-        this.searchInput.focus();
+        this.searchInput.focus({ preventScroll: true });
       } else {
-        this.container.focus();
+        this.container.focus({ preventScroll: true });
       }
     });
   }

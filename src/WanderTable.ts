@@ -393,7 +393,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
     }
 
     // Focus the container
-    this.renderer.getContainer().focus();
+    this.renderer.getContainer().focus({ preventScroll: true });
   }
 
   private wireCallbacks(): void {
@@ -562,7 +562,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
         this.commit({ type: 'edit', row, col, value, previous: this.source.getCell(row, col)?.value });
       }
       this.emit('editor:close', { row, col, value, cancelled });
-      this.renderer.getContainer().focus();
+      this.renderer.getContainer().focus({ preventScroll: true });
     };
     this.editorManager.onAdvance = (dRow, dCol) => {
       this.selection.move(dRow, dCol, false);

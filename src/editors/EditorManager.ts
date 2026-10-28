@@ -164,7 +164,7 @@ class TextEditorImpl implements CellEditor {
     // Focus now, not on the next frame: keys typed in between would land on the
     // grid. Typing into a cell starts with that character and the caret after
     // it; selecting it would let the next key replace it.
-    this.input.focus();
+    this.input.focus({ preventScroll: true });
     if (selectAll) {
       this.input.select();
     } else {

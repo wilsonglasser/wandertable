@@ -139,7 +139,7 @@ export class ContextMenu {
     const focus = (i: number) => {
       if (level.rows.length === 0) return;
       const next = (i + level.rows.length) % level.rows.length;
-      level.rows[next].focus();
+      level.rows[next].focus({ preventScroll: true });
     };
     switch (e.key) {
       case 'ArrowDown':
@@ -201,7 +201,7 @@ export class ContextMenu {
     document.body.appendChild(level.el);
     this.place(level.el, x, y);
     this.levels.push(level);
-    level.rows[0]?.focus();
+    level.rows[0]?.focus({ preventScroll: true });
 
     requestAnimationFrame(() => {
       document.addEventListener('mousedown', this.closeHandler);
@@ -268,7 +268,7 @@ export class ContextMenu {
       row.addEventListener('mouseenter', () => {
         const levelIndex = this.levels.indexOf(level);
         if (levelIndex < 0) return;
-        row.focus();
+        row.focus({ preventScroll: true });
         if (entry.children) {
           this.openSubmenu(levelIndex, index, false);
         } else {
@@ -315,7 +315,7 @@ export class ContextMenu {
     const row = level.rows[index];
     const open = this.levels[levelIndex + 1];
     if (open && open.parentRow === row) {
-      if (focusFirst) open.rows[0]?.focus();
+      if (focusFirst) open.rows[0]?.focus({ preventScroll: true });
       return;
     }
     this.closeLevelsFrom(levelIndex + 1, false);
@@ -334,7 +334,7 @@ export class ContextMenu {
     this.place(sub.el, x, rowRect.top - 4);
 
     this.levels.push(sub);
-    if (focusFirst) sub.rows[0]?.focus();
+    if (focusFirst) sub.rows[0]?.focus({ preventScroll: true });
   }
 
   /** Close submenu levels from `levelIndex` up; optionally focus the row that opened them. */
@@ -345,7 +345,7 @@ export class ContextMenu {
       if (level.parentRow) {
         level.parentRow.setAttribute('aria-expanded', 'false');
         level.parentRow.removeAttribute('aria-controls');
-        if (focusParent && this.levels.length === levelIndex) level.parentRow.focus();
+        if (focusParent && this.levels.length === levelIndex) level.parentRow.focus({ preventScroll: true });
       }
     }
   }
@@ -364,7 +364,7 @@ export class ContextMenu {
     this.ctx = null;
     document.removeEventListener('mousedown', this.closeHandler);
     document.removeEventListener('keydown', this.keyHandler, true);
-    if (wasOpen && this.returnFocus?.isConnected) this.returnFocus.focus();
+    if (wasOpen && this.returnFocus?.isConnected) this.returnFocus.focus({ preventScroll: true });
     this.returnFocus = null;
   }
 

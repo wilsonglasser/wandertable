@@ -367,3 +367,34 @@ describe('editor position', () => {
     host.remove();
   });
 });
+
+describe('focus never scrolls the page', () => {
+  it('returns focus to the grid without scrolling after the context menu and the editor close', async () => {
+    stubLayout();
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const table = new WanderTable(host, { rowCount: 20, colCount: 5 });
+    table.setCell(1, 1, { value: 'x' });
+    await frame();
+    const calls: (FocusOptions | undefined)[] = [];
+    const original = HTMLElement.prototype.focus;
+    HTMLElement.prototype.focus = function (this: HTMLElement, options?: FocusOptions) {
+      calls.push(options);
+      return original.call(this, options);
+    };
+    try {
+      table.setSelection([{ startRow: 1, startCol: 1, endRow: 1, endCol: 1 }]);
+      const cell = host.querySelector<HTMLElement>('.wt-cell[data-row="1"][data-col="1"]')!;
+      cell.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      key(host, 'F2');
+      key(host.querySelector('input')!, 'Escape');
+      expect(calls.length).toBeGreaterThan(0);
+      expect(calls.every((o) => o?.preventScroll === true)).toBe(true);
+    } finally {
+      HTMLElement.prototype.focus = original;
+      table.destroy();
+      host.remove();
+    }
+  });
+});
