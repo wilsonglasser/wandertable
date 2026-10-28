@@ -7,8 +7,11 @@ export interface ClipboardPayload {
   html: string;
 }
 
-/** Host-specific text/html for a copied range (e.g. a field payload); null = default table. */
-export type ClipboardHtmlFn = (range: SelectionRange) => string | null;
+/**
+ * Host-specific text/html for a copied range (e.g. a field payload); null = default table.
+ * `cut` tells a cut from a copy (the host may move instead of duplicating on paste).
+ */
+export type ClipboardHtmlFn = (range: SelectionRange, info: { cut: boolean }) => string | null;
 
 function escapeHtml(value: string): string {
   return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -31,7 +34,7 @@ export class ClipboardManager {
   }
 
   /** text/plain (TSV) and text/html of the selection's bounding range. */
-  payload(): ClipboardPayload | null {
+  payload(cut = false): ClipboardPayload | null {
     const bounds = this.selection.getBounds();
     if (!bounds) return null;
 
@@ -45,14 +48,14 @@ export class ClipboardManager {
       rows.push(cols);
     }
     const range: SelectionRange = { startRow: bounds.r1, startCol: bounds.c1, endRow: bounds.r2, endCol: bounds.c2 };
-    const html = this.htmlFor?.(range)
+    const html = this.htmlFor?.(range, { cut })
       ?? `<table>${rows.map((r) => `<tr>${r.map((v) => `<td>${escapeHtml(v)}</td>`).join('')}</tr>`).join('')}</table>`;
     return { text: serializeTSV(rows), html };
   }
 
   /** Fill a native copy/cut event. Returns false when there is nothing to copy. */
-  writeEvent(e: ClipboardEvent): boolean {
-    const payload = this.payload();
+  writeEvent(e: ClipboardEvent, cut = false): boolean {
+    const payload = this.payload(cut);
     if (!payload || !e.clipboardData) return false;
     e.clipboardData.setData('text/plain', payload.text);
     e.clipboardData.setData('text/html', payload.html);
@@ -61,8 +64,8 @@ export class ClipboardManager {
   }
 
   /** Context-menu copy: async Clipboard API, plain text fallback. */
-  async copyAsync(): Promise<boolean> {
-    const payload = this.payload();
+  async copyAsync(cut = false): Promise<boolean> {
+    const payload = this.payload(cut);
     if (!payload) return false;
     try {
       if (typeof ClipboardItem !== 'undefined' && navigator.clipboard?.write) {

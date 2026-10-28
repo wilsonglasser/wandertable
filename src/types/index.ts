@@ -337,8 +337,8 @@ export interface WanderTableOptions {
    * included) and the host calls invalidate()/setSize() after changing it.
    */
   source?: CellSource;
-  /** Host text/html for copied ranges (e.g. its own field payload); null = default table. */
-  clipboardHtml?: (range: SelectionRange) => string | null;
+  /** Host text/html for copied ranges (e.g. its own field payload); null = default table. `cut` tells a cut from a copy. */
+  clipboardHtml?: (range: SelectionRange, info: { cut: boolean }) => string | null;
   /** Translations of the built-in UI strings. */
   labels?: Partial<GridLabels>;
   /** Called for every GridIntent (same as the 'intent' event). */

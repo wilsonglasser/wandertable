@@ -64,7 +64,7 @@ describe('intents with an external source', () => {
     table = new WanderTable(host, {
       source: doc,
       onIntent: (i) => intents.push(i),
-      clipboardHtml: (range) => `<x-field data-range="${range.startRow},${range.startCol}"></x-field>`,
+      clipboardHtml: (range, info) => `<x-field data-range="${range.startRow},${range.startCol}"${info.cut ? ' data-cut' : ''}></x-field>`,
     });
     root = host;
     await frame();
@@ -123,7 +123,10 @@ describe('intents with an external source', () => {
     expect(store.get('text/html')).toBe('<x-field data-range="0,0"></x-field>');
     expect(intents).toEqual([]);
 
-    root.dispatchEvent(clipboardEvent('cut'));
+    const cut = clipboardEvent('cut');
+    root.dispatchEvent(cut);
+    // The host is told it is a cut (it may move the cells instead of copying them).
+    expect((cut.clipboardData as unknown as { store: Map<string, string> }).store.get('text/html')).toBe('<x-field data-range="0,0" data-cut></x-field>');
     expect(intents).toContainEqual({
       type: 'clear', ranges: [{ startRow: 0, startCol: 0, endRow: 0, endCol: 1 }], cut: true,
     });

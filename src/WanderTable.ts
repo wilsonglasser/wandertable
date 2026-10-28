@@ -1307,7 +1307,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
 
   private handleCutEvent = (e: ClipboardEvent): void => {
     if (this.editorManager.isEditing || this.options.allowClipboard === false) return;
-    if (this.clipboard.writeEvent(e) && !this.options.readOnly) {
+    if (this.clipboard.writeEvent(e, true) && !this.options.readOnly) {
       this.commit({ type: 'clear', ranges: this.getSelection(), cut: true });
     }
   };
@@ -1324,7 +1324,9 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
   }
 
   private async cutFromMenu(): Promise<void> {
-    if (await this.clipboard.copyAsync()) this.deleteSelected();
+    if (this.options.readOnly || this.selection.ranges.length === 0) return;
+    // Same intent as a keyboard cut (the host may move instead of clearing).
+    if (await this.clipboard.copyAsync(true)) this.commit({ type: 'clear', ranges: this.getSelection(), cut: true });
   }
 
   /**
