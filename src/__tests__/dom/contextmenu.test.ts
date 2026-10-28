@@ -47,6 +47,26 @@ describe('context menu submenus', () => {
     expect(document.activeElement).toBe(rows[0]);
   });
 
+  it('marks checkable choices with menuitemcheckbox and aria-checked', async () => {
+    ran = [];
+    menu = new ContextMenu();
+    menu.open(10, 10, [
+      { label: 'Number', checked: true, action: () => ran.push('number') },
+      { label: 'Text', checked: () => false, action: () => ran.push('text') },
+      { label: 'Plain', action: () => ran.push('plain') },
+    ], ctx);
+    await frame();
+    const [root] = menu.elements;
+    const checks = [...root.querySelectorAll<HTMLElement>('[role=menuitemcheckbox]')];
+    expect(checks.map((r) => r.getAttribute('aria-checked'))).toEqual(['true', 'false']);
+    expect(root.querySelectorAll('[role=menuitem]')).toHaveLength(1);
+    expect(checks[0].querySelector('.wt-context-menu-check')?.getAttribute('aria-hidden')).toBe('true');
+    expect(checks[1].querySelector('.wt-context-menu-check')).toBeNull();
+    key('ArrowDown');
+    key('Enter');
+    expect(ran).toEqual(['text']);
+  });
+
   it('opens the submenu with ArrowRight, runs a child with Enter, and closes one level with ArrowLeft', async () => {
     ran = [];
     menu = new ContextMenu();

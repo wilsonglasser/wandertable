@@ -9,6 +9,10 @@
 .wt-root {
   position: relative;
   isolation: isolate;
+  /* Virtualized rows are recycled DOM nodes: a scroll anchor inside the grid
+     moves to another row on every paint and the browser keeps compensating,
+     so a page-scrolled grid (layout 'auto') ran away to the bottom. */
+  overflow-anchor: none;
   overflow: hidden;
   background: var(--wt-bg, #ffffff);
   font-family: var(--wt-font, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
@@ -518,6 +522,15 @@
   font-size: 15px;
   line-height: 1;
   color: #94a3b8;
+}
+
+.wt-context-menu-item--checked {
+  font-weight: 600;
+}
+
+.wt-context-menu-check {
+  margin-left: 12px;
+  color: var(--wt-focus-border, #3b82f6);
 }
 
 .wt-context-menu-item--disabled {

@@ -39,12 +39,17 @@ export interface MenuItemConfig {
   icon?: string;
   /** Items of a submenu. An item whose children all resolve away is dropped. */
   children?: MenuItemConfig[];
+  /**
+   * Marks the item as a checkable choice (role menuitemcheckbox with aria-checked),
+   * e.g. the current value in a "pick one" submenu. Undefined keeps a plain menuitem.
+   */
+  checked?: boolean | ((ctx: MenuContext) => boolean);
 }
 
 /** A resolved, renderable menu entry: either a separator or a concrete item. */
 export type ResolvedMenuEntry =
   | { type: 'separator' }
-  | { type: 'item'; item: MenuItemConfig; children?: ResolvedMenuEntry[] };
+  | { type: 'item'; item: MenuItemConfig; children?: ResolvedMenuEntry[]; checked?: boolean };
 
 /**
  * Resolve the raw menu config into the list of entries that should actually be
@@ -76,6 +81,10 @@ export function resolveMenuEntries(items: MenuItemConfig[], ctx: MenuContext): R
         continue;
       }
       kept.push({ type: 'item', item, children });
+      continue;
+    }
+    if (item.checked !== undefined) {
+      kept.push({ type: 'item', item, checked: typeof item.checked === 'function' ? item.checked(ctx) : item.checked });
       continue;
     }
     kept.push({ type: 'item', item });
@@ -235,7 +244,13 @@ export class ContextMenu {
       const item = entry.item;
       const row = document.createElement('div');
       row.className = 'wt-context-menu-item';
-      row.setAttribute('role', 'menuitem');
+      if (entry.checked === undefined) {
+        row.setAttribute('role', 'menuitem');
+      } else {
+        row.setAttribute('role', 'menuitemcheckbox');
+        row.setAttribute('aria-checked', String(entry.checked));
+        if (entry.checked) row.classList.add('wt-context-menu-item--checked');
+      }
       row.tabIndex = -1;
       row.id = `wt-menu-${this.uid}-${depth}-${level.rows.length}`;
 
@@ -257,6 +272,12 @@ export class ContextMenu {
         caret.setAttribute('aria-hidden', 'true');
         caret.textContent = '\u203A';
         row.appendChild(caret);
+      } else if (entry.checked) {
+        const check = document.createElement('span');
+        check.className = 'wt-context-menu-check';
+        check.setAttribute('aria-hidden', 'true');
+        check.textContent = '\u2713';
+        row.appendChild(check);
       } else if (item.shortcut) {
         const shortcut = document.createElement('span');
         shortcut.className = 'wt-context-menu-shortcut';
