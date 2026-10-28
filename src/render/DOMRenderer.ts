@@ -1159,12 +1159,15 @@ export class DOMRenderer {
     }
   }
 
-  /** Get the pixel bounds of a cell relative to the scroll container */
+  /** Pixel bounds of a cell in the scroll container's content coordinates. */
   getCellBounds(row: number, col: number): { x: number; y: number; width: number; height: number } {
     const { columns, rows } = this.ctx;
+    // Content coordinates: the editor overlay lives inside the scroll container,
+    // so the scroll offset is already applied by the browser. Subtracting it
+    // put the editor columns away from its cell once the grid was scrolled.
     return {
-      x: columns.getX(col) - this.scrollContainer.scrollLeft,
-      y: rows.getY(row) - this.scrollContainer.scrollTop,
+      x: columns.getX(col),
+      y: rows.getY(row),
       width: columns.getWidth(col),
       height: rows.getHeight(row),
     };

@@ -346,3 +346,24 @@ describe('double-click takeover', () => {
     host.remove();
   });
 });
+
+describe('editor position', () => {
+  it('opens on its cell after the grid scrolled horizontally', async () => {
+    stubLayout();
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const table = new WanderTable(host, { rowCount: 50, colCount: 30, defaultColWidth: 100 });
+    table.setCell(2, 12, { value: 'far right' });
+    await frame();
+    const sc = host.querySelector<HTMLElement>('.wt-scroll-container')!;
+    sc.scrollLeft = 900;
+    sc.dispatchEvent(new Event('scroll'));
+    await frame();
+    table.setSelection([{ startRow: 2, startCol: 12, endRow: 2, endCol: 12 }]);
+    key(host, 'F2');
+    const overlay = host.querySelector<HTMLElement>('.wt-editor-overlay')!;
+    expect(overlay.style.left).toBe('1200px');
+    table.destroy();
+    host.remove();
+  });
+});
