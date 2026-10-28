@@ -894,6 +894,17 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
     this.renderer.scheduleRender();
   }
 
+  /**
+   * Set many row heights in one go (e.g. heights a host estimates without
+   * reading layout). One prefix-sum rebuild and one repaint.
+   */
+  setRowHeights(entries: Iterable<[number, number]>): void {
+    if (this.rows.setHeights(entries)) {
+      this.renderer.updateLayout();
+      this.renderer.schedulePaint();
+    }
+  }
+
   setRowHeight(row: number, height: number): void {
     this.rows.setHeight(row, height);
     this.renderer.updateLayout();

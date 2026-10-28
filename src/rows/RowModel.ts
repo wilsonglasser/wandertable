@@ -35,6 +35,25 @@ export class RowModel {
     this.prefixSums = this.buildPrefixSums();
   }
 
+  /**
+   * Set many row heights at once: one prefix-sum rebuild instead of one per
+   * row. Returns whether anything changed.
+   */
+  setHeights(entries: Iterable<[number, number]>): boolean {
+    const minH = 20;
+    let changed = false;
+    for (const [row, height] of entries) {
+      if (row < 0 || row >= this.heights.length) continue;
+      const h = Math.max(minH, height);
+      if (this.heights[row] !== h) {
+        this.heights[row] = h;
+        changed = true;
+      }
+    }
+    if (changed) this.prefixSums = this.buildPrefixSums();
+    return changed;
+  }
+
   getY(row: number): number {
     return this.prefixSums[row] ?? 0;
   }

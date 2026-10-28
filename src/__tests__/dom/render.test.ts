@@ -358,3 +358,20 @@ describe('auto layout virtualized by the page scroll', () => {
     expect(cellAt(host, 0, 0)).toBeUndefined();
   });
 });
+
+describe('setRowHeights', () => {
+  it('applies many heights with one rebuild and repositions the rows below', async () => {
+    stubLayout();
+    const host = document.createElement('div');
+    document.body.appendChild(host);
+    const table = new WanderTable(host, { rowCount: 100, colCount: 3, defaultRowHeight: ROW_H });
+    table.setCell(3, 0, { value: 'below' });
+    await frame();
+    table.setRowHeights([[1, 80], [2, 60]]);
+    await frame();
+    expect(table.rows.getY(3)).toBe(ROW_H + 80 + 60);
+    expect(cellAt(host, 3, 0)?.parentElement?.style.transform).toBe(`translateY(${ROW_H + 80 + 60}px)`);
+    table.destroy();
+    host.remove();
+  });
+});
