@@ -1,7 +1,14 @@
 /* ── WanderTable Core Styles ── */
 
+/*
+ * Stacking inside the grid (the root isolates it, so nothing here competes with
+ * the host page's sticky bars): cells 1 < row/col headers 2 < frozen layer 3 <
+ * fill shadow 4 < inline editor / fill handle 5 < sticky headers, corner and
+ * frozen header layer 6 < dropdowns 20 < context menu 50 < loading overlay 50.
+ */
 .wt-root {
   position: relative;
+  isolation: isolate;
   overflow: hidden;
   background: var(--wt-bg, #ffffff);
   font-family: var(--wt-font, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
@@ -79,7 +86,7 @@
   position: sticky;
   left: 0;
   top: 0;
-  z-index: 4;
+  z-index: 6;
   background: var(--wt-header-bg, #f8fafc);
   border-right: 1px solid var(--wt-grid-line, #e2e8f0);
 }
@@ -297,7 +304,7 @@
 
 .wt-editor-overlay {
   position: absolute;
-  z-index: 10;
+  z-index: 5;
   pointer-events: auto;
 }
 

@@ -311,7 +311,7 @@ export class DOMRenderer {
           for (const el of [this.colHeaderEl, this.cornerEl]) {
             el.style.position = 'sticky';
             el.style.top = this.ctx.stickyTop ?? '0';
-            el.style.zIndex = '4';
+            el.style.zIndex = '6';
           }
         }
 
