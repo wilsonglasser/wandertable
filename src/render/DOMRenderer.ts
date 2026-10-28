@@ -91,6 +91,8 @@ export class DOMRenderer {
   private contentDirtyAll = true;
   /** Cells whose content changed since the last paint (row * DIRTY_STRIDE + col). */
   private dirtyCells = new Set<number>();
+  /** Data rows with at least one cell content painted in the current frame. */
+  private paintedRows = new Set<number>();
   private readonly uid = ++gridUid;
   private cellSeq = 0;
   /** Measured header height when autoHeaderHeight is on (null = use theme). */
@@ -508,6 +510,7 @@ export class DOMRenderer {
 
     // Render all needed rows
     this.focusedCellEl = null;
+    this.paintedRows.clear();
     for (const r of visibleSet) {
       this.renderRow(r, vp, scrollY, frozenRows, frozenCols);
     }
@@ -519,7 +522,9 @@ export class DOMRenderer {
     // (scrolling) row and the frozen sticky row contribute to the row height —
     // the tallest cell across BOTH pools wins, and the measured height is then
     // applied to both so the frozen columns stay aligned with the body.
-    if (this.ctx.autoRowHeight) {
+    // Only rows whose content was painted this frame can have changed height:
+    // scroll, selection and untouched rows keep their measured height.
+    if (this.ctx.autoRowHeight && this.paintedRows.size > 0) {
       // Switch every auto-row cell to top-alignment for the whole read pass via a
       // single class on the root (one style write → reads collapse into one
       // reflow, instead of thrashing one reflow per cell). Restored right after so
@@ -529,6 +534,7 @@ export class DOMRenderer {
       this.container.classList.add('wt-measuring');
       let layoutChanged = false;
       for (const r of visibleSet) {
+        if (!this.paintedRows.has(viewMapping.toDataRow(r))) continue;
         const heights: number[] = [];
         const mainPooled = this.activeRows.get(r);
         if (mainPooled) {
@@ -710,6 +716,7 @@ export class DOMRenderer {
   }
 
   private paintCellContent(cellEl: CellEl, dataRow: number, col: number, cellData: CellData | undefined, state: CellState): void {
+    this.paintedRows.add(dataRow);
     cellEl._wtRenderer?.cleanup?.(cellEl);
     cellEl._wtRow = dataRow;
     cellEl._wtCol = col;
