@@ -347,6 +347,8 @@ export interface WanderTableOptions {
   history?: HistoryState;
   /** Accessible name per cell (aria-label), e.g. reference + field name. */
   cellLabel?: (row: number, col: number, data: CellData | undefined) => string | null | undefined;
+  /** Text of a row header; null/undefined = the 1-based row number. Return '' to leave it blank. */
+  rowHeaderLabel?: (row: number) => string | null | undefined;
   colCount?: number;
   defaultRowHeight?: number;
   defaultColWidth?: number;

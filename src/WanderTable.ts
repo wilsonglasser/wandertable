@@ -223,6 +223,7 @@ export class WanderTable extends EventEmitter<WanderTableEvents> {
       stickyTop: options.stickyTop,
       headerRows: this.headerRows.length > 0 ? this.headerRows : undefined,
       cellLabel: options.cellLabel,
+      rowHeaderLabel: options.rowHeaderLabel,
     });
 
     // AutoFit (needs renderer to be initialized)
