@@ -42,6 +42,8 @@ interface RendererContext {
   headerRows?: import('../columns/GroupedHeaders.js').HeaderCell[][];
   /** Accessible name for a cell (aria-label); null/undefined = use its text. */
   cellLabel?: (row: number, col: number, data: CellData | undefined) => string | null | undefined;
+  /** Row header text; null/undefined = the 1-based row number. */
+  rowHeaderLabel?: (row: number) => string | null | undefined;
 }
 
 /**
@@ -1080,7 +1082,7 @@ export class DOMRenderer {
       cell.style.transform = `translateY(${rows.getY(row)}px)`;
       cell.style.height = `${rows.getHeight(row)}px`;
       cell.style.width = `${theme.rowHeaderWidth}px`;
-      cell.textContent = String(row + 1);
+      cell.textContent = this.ctx.rowHeaderLabel?.(row) ?? String(row + 1);
       cell.dataset.row = String(row);
     }
 
